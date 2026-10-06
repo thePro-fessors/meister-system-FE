@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState, useSync
 import { DemoUser, PointRecord, Submission, User, YearCriteria } from "@/lib/types";
 import { createDemoAuthService, publicUser, type AuthService } from "@/lib/auth-service";
 import { SEED_CRITERIA, SEED_POINTS, SEED_SUBMISSIONS, SEED_USERS } from "@/lib/seed";
+import { softDeletePoint } from "@/lib/point-actions";
 
 interface DataShape {
   users: DemoUser[];
@@ -54,6 +55,7 @@ interface DataContextValue extends Omit<DataShape, "users"> {
   addSubmission: (s: Submission) => void;
   updateSubmission: (id: string, patch: Partial<Submission>) => void;
   deleteSubmission: (id: string, studentId: string) => void;
+  deletePoint: (id: string, actorId: string) => void;
   addPoint: (p: PointRecord) => void;
   updatePoint: (id: string, patch: Partial<PointRecord>, editorId: string, reason: string) => void;
   updateCriteria: (criteria: YearCriteria[]) => void;
@@ -103,6 +105,13 @@ function HydratedDataProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<DataContextValue>(
     () => ({
       ...data,
+      points: data.points.filter((p) => !p.deletedAt),
+      deletePoint: (id, actorId) => {
+        const actor = data.users.find((u) => u.id === actorId);
+        if (!actor) throw new Error("로그인이 필요합니다.");
+        const points = softDeletePoint(data.points, id, actor, data.users, new Date().toISOString());
+        setData({ ...data, points });
+      },
       users: data.users.map(publicUser),
       authService,
       addSubmission: (s) => setData((d) => ({ ...d, submissions: [s, ...d.submissions] })),

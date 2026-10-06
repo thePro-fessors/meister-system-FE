@@ -31,11 +31,13 @@ const NAV: Record<Role, NavItem[]> = {
     { href: "/student/points", label: "상벌점 내역", icon: Star },
   ],
   teacher: [
+    { href: "/teacher/chat", label: "학급 지도 도우미", icon: Users },
     { href: "/teacher/dashboard", label: "교사 대시보드", icon: LayoutDashboard },
     { href: "/teacher/students", label: "학생 자료 조회", icon: Users },
     { href: "/teacher/points", label: "상벌점 관리", icon: Star },
   ],
   admin: [
+    { href: "/admin/ai/audit", label: "AI 이상치 감사", icon: ShieldCheck },
     { href: "/admin/overview", label: "전체 현황", icon: Gauge },
     { href: "/teacher/dashboard", label: "증빙 심사", icon: ClipboardList },
     { href: "/teacher/students", label: "학생 자료 조회", icon: Users },

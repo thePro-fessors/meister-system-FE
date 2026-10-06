@@ -9,6 +9,7 @@ import { StatusPill } from "@/components/StatusPill";
 import { isInTeacherScope } from "@/lib/teacherScope";
 import { AREA_NAMES, AreaName, PointType } from "@/lib/types";
 import { academicYear } from "@/lib/grading";
+import { DeletePointButton } from "@/components/DeletePointButton";
 
 export default function TeacherPointsPage() {
   const { user } = useAuth();
@@ -217,6 +218,7 @@ export default function TeacherPointsPage() {
                       {p.score > 0 ? `+${p.score}` : p.score}
                     </span>
                   )}
+                  <DeletePointButton id={p.id} />
                 </td>
                 <td className="text-ink">{p.reason}</td>
                 <td className="text-ink-soft">{p.reflected ? `반영 (${p.reflectedArea})` : "미반영"}</td>

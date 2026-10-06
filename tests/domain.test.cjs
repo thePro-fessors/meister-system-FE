@@ -16,6 +16,22 @@ const { isInTeacherScope } = require("../src/lib/teacherScope.ts");
 const { createDemoAuthService } = require("../src/lib/auth-service.ts");
 const { parseLoginResponse, parseMeResponse } = require("../src/lib/auth-contract.ts");
 const { homeForRole, canAccessRole, loginDestination } = require("../src/lib/navigation.ts");
+const { softDeletePoint } = require("../src/lib/point-actions.ts");
+
+test("point soft deletion preserves audit data and enforces teacher scope", () => {
+  const student = { id: "s", role: "student", grade: 1, classNo: 2 };
+  const teacher = { id: "t", role: "teacher", homeroom: "1-2" };
+  const points = [{ id: "p", studentId: "s", score: -3 }];
+  const deleted = softDeletePoint(points, "p", teacher, [student], "2026-10-06");
+  assert.equal(deleted[0].deletedBy, "t");
+  assert.equal(deleted[0].score, -3);
+  assert.equal(points[0].deletedAt, undefined);
+  assert.equal(deleted.filter((p) => !p.deletedAt).length, 0);
+  assert.throws(() => softDeletePoint(deleted, "p", teacher, [student], "now"));
+  assert.throws(() => softDeletePoint(points, "p", { ...teacher, homeroom: "2-1" }, [student], "now"));
+  assert.throws(() => softDeletePoint(points, "p", student, [student], "now"));
+  assert.equal(softDeletePoint(points, "p", { id: "admin", role: "admin" }, [student], "now")[0].deletedBy, "admin");
+});
 
 test("role navigation permits admin review but rejects cross-role and unsafe redirects", () => {
   assert.equal(homeForRole("admin"), "/admin/overview");

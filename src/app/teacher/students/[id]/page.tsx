@@ -7,9 +7,10 @@ import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { GradeBadge } from "@/components/GradeBadge";
 import { StatusPill } from "@/components/StatusPill";
-import { computeAreaResults } from "@/lib/grading";
+import { academicYear, computeAreaResults } from "@/lib/grading";
 import { useAuth } from "@/context/AuthContext";
 import { isInTeacherScope } from "@/lib/teacherScope";
+import { DeletePointButton } from "@/components/DeletePointButton";
 
 export default function StudentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -48,6 +49,7 @@ export default function StudentDetailPage({ params }: { params: Promise<{ id: st
       />
 
       <div className="mb-6 overflow-hidden rounded-lg border border-line bg-paper-raised">
+        <p aria-live="polite" className="p-5 text-sm text-ink">취득 총점 {results.reduce((sum, r) => sum + r.score, 0)}점 · 상벌점 합계 {points.filter((p) => p.studentId === id && (p.year ?? academicYear(p.date)) === year?.year).reduce((sum, p) => sum + p.score, 0)}점</p>
         <table className="ledger-table">
           <thead>
             <tr>
@@ -75,6 +77,15 @@ export default function StudentDetailPage({ params }: { params: Promise<{ id: st
           </tbody>
         </table>
       </div>
+
+      <section className="mb-6 rounded-lg border border-line bg-paper-raised p-5">
+        <h2 className="font-display font-semibold">상벌점 이력</h2>
+        <Link href="/teacher/points" className="text-sm text-brass">상벌점 신규 부여</Link>
+        {points.filter((p) => p.studentId === id).map((p) => <div key={p.id} className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3 text-sm">
+          <span>{p.date} · {p.reason} · {p.score > 0 ? "+" : ""}{p.score}점</span><DeletePointButton id={p.id} />
+        </div>)}
+        {!points.some((p) => p.studentId === id) && <p className="mt-3 text-sm text-ink-soft">상벌점 기록이 없습니다.</p>}
+      </section>
 
       <div className="overflow-hidden rounded-lg border border-line bg-paper-raised">
         <div className="border-b border-line px-5 py-3">

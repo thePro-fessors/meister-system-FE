@@ -100,6 +100,8 @@ export interface Submission {
 export type PointType = "상점" | "벌점";
 
 export interface PointRecord {
+  deletedAt?: string;
+  deletedBy?: string;
   id: string;
   year?: number; // 학년도; 기존 기록은 발생일 기준 3월~다음 해 2월로 계산
   studentId: string;
