@@ -6,11 +6,16 @@ import { useAuth } from "@/context/AuthContext";
 import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { StatusPill } from "@/components/StatusPill";
-import { Submission } from "@/lib/types";
+import { Submission, SubmissionStatus } from "@/lib/types";
+
+const STATUSES: SubmissionStatus[] = ["제출완료", "검토중", "인정완료", "반려", "재제출요청"];
 
 export default function StudentSubmissionsPage() {
   const { user } = useAuth();
-  const { submissions, criteria, updateSubmission } = useData();
+  const { submissions, criteria, updateSubmission, deleteSubmission } = useData();
+  const [year, setYear] = useState(() => String(criteria.find((c) => c.active)?.year ?? ""));
+  const [status, setStatus] = useState<SubmissionStatus | "">("");
+  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState({ description: "", fileName: "", link: "" });
@@ -22,6 +27,9 @@ export default function StudentSubmissionsPage() {
         .sort((a, b) => (a.submittedAt < b.submittedAt ? 1 : -1)),
     [submissions, user]
   );
+  const years = [...new Set([...criteria.map((c) => c.year), ...mine.map((s) => s.year)])].sort((a, b) => b - a);
+  const inYear = mine.filter((s) => !year || s.year === Number(year));
+  const visible = inYear.filter((s) => !status || s.status === status);
 
   function startResubmit(s: Submission) {
     setError("");
@@ -65,13 +73,28 @@ export default function StudentSubmissionsPage() {
     <div>
       <PageHeader title="제출 내역" description="제출한 증빙자료의 처리 결과를 확인할 수 있습니다." />
 
+      <label className="mb-4 flex items-center gap-3 text-sm text-ink">학년도
+        <select value={year} onChange={(e) => { setYear(e.target.value); setEditing(null); }} className="rounded-md border border-line bg-white px-3 py-2">
+          <option value="">전체 학년도</option>
+          {years.map((value) => <option key={value} value={value}>{value}학년도</option>)}
+        </select>
+      </label>
+      <div role="group" aria-label="심사 상태 필터" className="mb-5 flex flex-wrap gap-2">
+        {(["", ...STATUSES] as const).map((value) => <button key={value} aria-pressed={status === value}
+          onClick={() => { setStatus(value); setEditing(null); }}
+          className={`rounded-md border border-line px-3 py-2 text-sm ${status === value ? "bg-navy text-white" : "bg-paper-raised text-ink"}`}>
+          {value || "전체"} ({inYear.filter((s) => !value || s.status === value).length})
+        </button>)}
+      </div>
+      {notice && <p role="status" className="mb-4 text-sm text-ink-soft">{notice}</p>}
+
       <div className="space-y-3">
-        {mine.map((s) => (
+        {visible.map((s) => (
           <div key={s.id} className="rounded-lg border border-line bg-paper-raised p-5">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-xs text-ink-soft">
-                  {s.submittedAt} 제출 · {s.area}
+                  {s.submittedAt} 제출 · {s.area} · 활동일 {s.activityDate}
                 </p>
                 <p className="mt-1 font-medium text-ink">
                   {s.itemName} <span className="text-ink-soft">· {s.detail}</span>
@@ -121,6 +144,15 @@ export default function StudentSubmissionsPage() {
               </button>
             )}
 
+            {s.status !== "인정완료" && <button
+              onClick={() => {
+                if (!user || !window.confirm(`'${s.detail}' 자료를 삭제하시겠습니까? 삭제한 자료는 복구할 수 없습니다.`)) return;
+                deleteSubmission(s.id, user.id);
+                if (editing === s.id) setEditing(null);
+                setNotice("제출 자료를 삭제했습니다.");
+              }}
+              className="ml-2 mt-3 rounded-md border border-line px-3 py-1.5 text-xs text-alert">제출 삭제</button>}
+
             {editing === s.id && (
               <div className="mt-4 space-y-3 rounded-md border border-line bg-white p-4">
                 {error && <p role="alert" className="text-sm text-alert">{error}</p>}
@@ -163,9 +195,9 @@ export default function StudentSubmissionsPage() {
           </div>
         ))}
 
-        {mine.length === 0 && (
+        {visible.length === 0 && (
           <p className="rounded-lg border border-line bg-paper-raised p-8 text-center text-sm text-ink-soft">
-            아직 제출한 증빙자료가 없습니다.
+            선택한 조건에 해당하는 증빙자료가 없습니다.
           </p>
         )}
       </div>

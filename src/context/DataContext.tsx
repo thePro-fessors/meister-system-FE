@@ -53,6 +53,7 @@ interface DataContextValue extends Omit<DataShape, "users"> {
   authService: AuthService;
   addSubmission: (s: Submission) => void;
   updateSubmission: (id: string, patch: Partial<Submission>) => void;
+  deleteSubmission: (id: string, studentId: string) => void;
   addPoint: (p: PointRecord) => void;
   updatePoint: (id: string, patch: Partial<PointRecord>, editorId: string, reason: string) => void;
   updateCriteria: (criteria: YearCriteria[]) => void;
@@ -105,6 +106,10 @@ function HydratedDataProvider({ children }: { children: React.ReactNode }) {
       users: data.users.map(publicUser),
       authService,
       addSubmission: (s) => setData((d) => ({ ...d, submissions: [s, ...d.submissions] })),
+      deleteSubmission: (id, studentId) => setData((d) => ({
+        ...d,
+        submissions: d.submissions.filter((s) => !(s.id === id && s.studentId === studentId && s.status !== "인정완료")),
+      })),
       updateSubmission: (id, patch) =>
         setData((d) => ({
           ...d,

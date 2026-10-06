@@ -15,6 +15,24 @@ const { computeAreaResults, gradeFromRatio, academicYear, isUnderReview } = requ
 const { isInTeacherScope } = require("../src/lib/teacherScope.ts");
 const { createDemoAuthService } = require("../src/lib/auth-service.ts");
 const { parseLoginResponse, parseMeResponse } = require("../src/lib/auth-contract.ts");
+const { homeForRole, canAccessRole, loginDestination } = require("../src/lib/navigation.ts");
+
+test("role navigation permits admin review but rejects cross-role and unsafe redirects", () => {
+  assert.equal(homeForRole("admin"), "/admin/overview");
+  assert.equal(canAccessRole("admin", "teacher"), true);
+  assert.equal(canAccessRole("teacher", "admin"), false);
+  assert.equal(loginDestination("student", "/student/submissions?year=2026"), "/student/submissions?year=2026");
+  assert.equal(loginDestination("admin", "/teacher/students"), "/teacher/students");
+  assert.equal(loginDestination("teacher", "/profile"), "/profile");
+  for (const path of [null, "https://evil.test", "//evil.test", "/\\evil.test", "/studentish/dashboard", "/admin/overview", "/login", "/student/\nfoo", "/student/../admin/overview", "/student/%2e%2e/admin/overview", "/student/%2fadmin"]) {
+    assert.equal(loginDestination("student", path), "/student/dashboard");
+  }
+});
+
+test("admin may inspect students but not non-student records", () => {
+  assert.equal(isInTeacherScope({ role: "admin" }, { role: "student" }), true);
+  assert.equal(isInTeacherScope({ role: "admin" }, { role: "teacher" }), false);
+});
 
 test("demo authentication remains local, asynchronous and password-free to consumers", async () => {
   const values = new Map();

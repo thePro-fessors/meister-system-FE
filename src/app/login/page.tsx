@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { loginDestination } from "@/lib/navigation";
 
 const DEMO_ACCOUNTS = [
   { id: "student1", label: "학생 · 김민준", role: "학생" },
@@ -20,7 +21,7 @@ export default function LoginPage() {
 
   useEffect(() => {
     if (!loading && user) {
-      router.replace(`/${user.role}/dashboard`);
+      router.replace(loginDestination(user.role, new URLSearchParams(window.location.search).get("redirect")));
     }
   }, [user, loading, router]);
 

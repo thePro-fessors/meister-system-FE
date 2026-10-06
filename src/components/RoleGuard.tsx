@@ -1,33 +1,36 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { Role } from "@/lib/types";
 import { AppShell } from "./AppShell";
+import { canAccessRole } from "@/lib/navigation";
 
 export function RoleGuard({
   role,
   children,
 }: {
-  role: Role;
+  role?: Role;
   children: React.ReactNode;
 }) {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+  const allowed = !!user && (!role || canAccessRole(user.role, role));
 
   useEffect(() => {
     if (loading) return;
     if (!user) {
-      router.replace("/login");
+      router.replace(`/login?redirect=${encodeURIComponent(pathname + window.location.search)}`);
       return;
     }
-    if (user.role !== role) {
-      router.replace(`/${user.role}/dashboard`);
+    if (!allowed) {
+      router.replace("/forbidden");
     }
-  }, [user, loading, role, router]);
+  }, [user, loading, allowed, router, pathname]);
 
-  if (loading || !user || user.role !== role) {
+  if (loading || !allowed) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-paper">
         <p className="font-display text-ink-soft">

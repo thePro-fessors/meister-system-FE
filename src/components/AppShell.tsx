@@ -26,7 +26,7 @@ interface NavItem {
 const NAV: Record<Role, NavItem[]> = {
   student: [
     { href: "/student/dashboard", label: "내 인증 현황", icon: LayoutDashboard },
-    { href: "/student/submit", label: "증빙자료 제출", icon: Upload },
+    { href: "/student/submissions/new", label: "증빙자료 제출", icon: Upload },
     { href: "/student/submissions", label: "제출 내역", icon: ClipboardList },
     { href: "/student/points", label: "상벌점 내역", icon: Star },
   ],
@@ -36,7 +36,10 @@ const NAV: Record<Role, NavItem[]> = {
     { href: "/teacher/points", label: "상벌점 관리", icon: Star },
   ],
   admin: [
-    { href: "/admin/dashboard", label: "전체 현황", icon: Gauge },
+    { href: "/admin/overview", label: "전체 현황", icon: Gauge },
+    { href: "/teacher/dashboard", label: "증빙 심사", icon: ClipboardList },
+    { href: "/teacher/students", label: "학생 자료 조회", icon: Users },
+    { href: "/teacher/points", label: "상벌점 관리", icon: Star },
     { href: "/admin/years", label: "학년도 관리", icon: CalendarRange },
     { href: "/admin/criteria", label: "기준 · 배점 관리", icon: Settings2 },
   ],
@@ -54,7 +57,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (!user) return null;
 
-  const items = NAV[user.role];
+  const items = [...NAV[user.role], { href: "/profile", label: "내 프로필", icon: Users }];
 
   return (
     <div className="app-frame flex min-h-screen flex-col md:flex-row">
@@ -70,7 +73,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <nav aria-label="주요 메뉴" className="flex gap-1 overflow-x-auto px-3 pb-3 md:flex-1 md:flex-col md:overflow-visible md:py-5">
           {items.map((item) => {
-            const active = pathname.startsWith(item.href);
+            const active = pathname === item.href || (pathname.startsWith(`${item.href}/`) && !items.some(
+              (other) => other.href !== item.href && other.href.startsWith(`${item.href}/`) && pathname.startsWith(other.href)
+            ));
             const Icon = item.icon;
             return (
               <Link
@@ -100,7 +105,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </p>
           </div>
           <button
-            onClick={logout}
+            onClick={() => { if (window.confirm("로그아웃하시겠습니까?")) void logout(); }}
             disabled={pending}
             aria-busy={pending}
             className="flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm text-ink-soft transition-colors hover:bg-alert-soft hover:text-alert md:w-full"
