@@ -6,7 +6,7 @@
   --paper-raised: #ffffff;
   --ink: #233449;
   --ink-soft: #59697b;
-  --line: #dce3eb;
+  --line: #e3e8ee;
   --brass: #2457c5;
   --brass-soft: #eaf0ff;
   --navy: #244b89;
@@ -61,27 +61,28 @@ body {
 body { line-height: 1.65; }
 button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
 button:not(:disabled), select { cursor: pointer; }
-:where(a, button, input, select, textarea):focus-visible {
-  outline: 3px solid var(--brass);
-  outline-offset: 4px;
+:is(a, button, input, select, textarea):focus-visible {
+  outline: 1px solid var(--brass);
+  outline-offset: 0;
+  box-shadow: 0 0 16px color-mix(in srgb, var(--brass) 10%, transparent);
 }
-.app-frame { background: linear-gradient(135deg, #edf2f8 0%, var(--paper) 45%, #f7f9fb 100%); }
+.app-frame { background: linear-gradient(180deg, #f8fafc 0%, var(--paper) 420px); }
 .app-sidebar { background: #fff; }
 .brand-mark {
-  display: grid; place-items: center; width: 40px; height: 44px;
-  border-radius: 10px 10px 16px 4px; background: var(--brass); color: white;
+  display: grid; place-items: center; width: 38px; height: 38px;
+  border-radius: 9px; background: var(--brass-soft); color: var(--brass);
 }
-.page-header { padding-bottom: 24px; margin-bottom: 28px; border-bottom: 1px solid var(--line); }
-.page-header h1 { font-size: clamp(1.65rem, 3vw, 2.15rem); line-height: 1.3; }
+.page-header { margin-bottom: 32px; }
+.page-header h1 { font-size: clamp(1.5rem, 3vw, 1.9rem); line-height: 1.35; letter-spacing: -0.035em; }
 .page-header p { max-width: 65ch; }
 .record-summary { display: grid; grid-template-columns: 1.25fr 1fr 1fr; gap: 28px; padding: 26px 30px; }
 .record-summary > div + div { border-left: 1px solid var(--line); padding-left: 28px; }
-.competency-panel { background: white; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+.competency-panel { background: white; border-radius: 10px; overflow: hidden; }
 .competency-row { display: grid; grid-template-columns: 145px minmax(100px, 1fr) 85px 34px; align-items: center; gap: 20px; padding: 22px 28px; }
 .competency-row + .competency-row { border-top: 1px solid #edf1f6; }
-.competency-track { height: 12px; border-radius: 3px; background: #edf1f7; position: relative; }
-.competency-track::after { content: ""; position: absolute; left: 80%; top: -4px; bottom: -4px; border-left: 2px solid #8998ab; }
-.competency-fill { height: 100%; border-radius: 3px; background: var(--brass); }
+.competency-track { height: 8px; border-radius: 4px; background: #edf1f7; position: relative; }
+.competency-track::after { content: ""; position: absolute; left: 80%; top: 0; bottom: 0; border-left: 2px solid #8998ab; }
+.competency-fill { height: 100%; border-radius: 4px; background: var(--brass); }
 .login-layout { min-height: 100dvh; display: grid; grid-template-columns: minmax(0, 1fr); }
 .login-form-panel { display: grid; place-items: center; padding: 48px 28px; background: white; }
 
@@ -121,7 +122,7 @@ div:has(> .ledger-table) {
 .ledger-table th,
 .ledger-table td {
   border-bottom: 1px solid var(--line);
-  padding: 0.65rem 0.75rem;
+  padding: 0.85rem 1rem;
   text-align: left;
   font-size: 0.875rem;
 }
@@ -137,6 +138,12 @@ div:has(> .ledger-table) {
 
 .ledger-table tbody tr:hover {
   background: #f7f9fc;
+}
+
+.ledger-table tbody tr:last-child td { border-bottom: 0; }
+
+@media (forced-colors: active) {
+  :is(a, button, input, select, textarea):focus-visible { outline-color: Highlight; }
 }
 
 ::selection {

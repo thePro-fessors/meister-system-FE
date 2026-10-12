@@ -73,7 +73,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        <nav aria-label="주요 메뉴" className="flex gap-1 overflow-x-auto px-3 pb-3 md:flex-1 md:flex-col md:overflow-visible md:py-5">
+        <nav aria-label="주요 메뉴" className="flex scroll-px-4 gap-1 overflow-x-auto px-4 py-4 md:flex-1 md:flex-col md:overflow-visible md:px-3 md:py-5">
           {items.map((item) => {
             const active = pathname === item.href || (pathname.startsWith(`${item.href}/`) && !items.some(
               (other) => other.href !== item.href && other.href.startsWith(`${item.href}/`) && pathname.startsWith(other.href)
