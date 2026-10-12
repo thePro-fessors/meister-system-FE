@@ -18,7 +18,8 @@ const SCORING_TYPES: ScoringType[] = [
 ];
 
 export default function AdminCriteriaPage() {
-  const { criteria, updateCriteria } = useData();
+  const { criteria, submissions, updateCriteria } = useData();
+  const [error, setError] = useState("");
   const years = criteria.map((c) => c.year).sort((a, b) => b - a);
   const [year, setYear] = useState(criteria.find((c) => c.active)?.year ?? years[0]);
   const yearCriteria = criteria.find((c) => c.year === year);
@@ -109,6 +110,11 @@ export default function AdminCriteriaPage() {
   }
 
   function removeItem(areaName: string, itemId: string) {
+    if (submissions.some((s) => s.year === year && s.area === areaName && s.itemId === itemId)) {
+      setError("제출 자료가 있는 항목은 삭제할 수 없습니다. 기존 점수를 보존하려면 항목을 비활성화해 주세요.");
+      return;
+    }
+    setError("");
     updateCriteria(
       criteria.map((c) =>
         c.year !== year
@@ -143,6 +149,7 @@ export default function AdminCriteriaPage() {
   return (
     <div>
       <PageHeader title="기준 · 배점 관리" description="학년도 · 학년별 인증 영역, 평가 항목, 배점과 산정 방식을 관리합니다." />
+      {error && <p role="alert" className="mb-4 rounded-md bg-alert-soft p-3 text-sm text-alert">{error}</p>}
 
       <div className="mb-6 flex flex-wrap gap-3">
         <select

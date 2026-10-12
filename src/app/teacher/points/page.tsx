@@ -6,7 +6,8 @@ import { useAuth } from "@/context/AuthContext";
 import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { StatusPill } from "@/components/StatusPill";
-import { isInTeacherScope } from "@/lib/teacherScope";
+import { canManageStudent } from "@/lib/teacherScope";
+import { validPointMagnitude } from "@/lib/point-actions";
 import { AREA_NAMES, AreaName, PointType } from "@/lib/types";
 import { academicYear } from "@/lib/grading";
 import { DeletePointButton } from "@/components/DeletePointButton";
@@ -16,7 +17,7 @@ export default function TeacherPointsPage() {
   const { users, points, addPoint, updatePoint } = useData();
 
   const scopedStudents = useMemo(
-    () => (user ? users.filter((u) => u.role === "student" && isInTeacherScope(user, u)) : []),
+    () => (user ? users.filter((u) => u.role === "student" && canManageStudent(user, u)) : []),
     [users, user]
   );
 
@@ -50,8 +51,8 @@ export default function TeacherPointsPage() {
       setFormError("학생을 선택해 주세요.");
       return;
     }
-    if (!date || !Number.isFinite(score) || score <= 0) {
-      setFormError("발생일과 0보다 큰 점수를 입력해 주세요.");
+    if (!date || !validPointMagnitude(score)) {
+      setFormError("발생일과 0 초과 100 이하의 점수를 입력해 주세요.");
       return;
     }
     setFormError(null);
@@ -78,8 +79,8 @@ export default function TeacherPointsPage() {
   }
 
   function saveEdit(id: string, type: PointType) {
-    if (!user || !list.some((p) => p.id === id) || !editReason.trim() || !Number.isFinite(editScore) || editScore <= 0) {
-      setFormError("수정 사유와 0보다 큰 점수를 입력해 주세요.");
+    if (!user || !list.some((p) => p.id === id) || !editReason.trim() || !validPointMagnitude(editScore)) {
+      setFormError("수정 사유와 0 초과 100 이하의 점수를 입력해 주세요.");
       return;
     }
     setFormError(null);
@@ -127,6 +128,7 @@ export default function TeacherPointsPage() {
           <input
             type="number"
             min={1}
+            max={100}
             value={score}
             onChange={(e) => setScore(Number(e.target.value))}
             className="w-full rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-brass"
@@ -209,6 +211,8 @@ export default function TeacherPointsPage() {
                   {editingId === p.id ? (
                     <input
                       type="number"
+                      min={1}
+                      max={100}
                       value={editScore}
                       onChange={(e) => setEditScore(Number(e.target.value))}
                       className="w-16 rounded-md border border-line px-2 py-1 text-sm outline-none focus:border-brass"

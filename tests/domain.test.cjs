@@ -12,11 +12,26 @@ require.extensions[".ts"] = (module, filename) => {
   module._compile(outputText, filename);
 };
 const { computeAreaResults, gradeFromRatio, academicYear, isUnderReview } = require("../src/lib/grading.ts");
-const { isInTeacherScope } = require("../src/lib/teacherScope.ts");
+const { isInTeacherScope, canManageStudent } = require("../src/lib/teacherScope.ts");
 const { createDemoAuthService } = require("../src/lib/auth-service.ts");
 const { parseLoginResponse, parseMeResponse } = require("../src/lib/auth-contract.ts");
 const { homeForRole, canAccessRole, loginDestination } = require("../src/lib/navigation.ts");
-const { softDeletePoint } = require("../src/lib/point-actions.ts");
+const { softDeletePoint, validPointMagnitude } = require("../src/lib/point-actions.ts");
+
+test("mutation permissions fail closed for unassigned teachers", () => {
+  const student = { id: "s", role: "student", grade: 1, classNo: 2 };
+  for (const actor of [{ role: "teacher" }, { role: "teacher", homeroom: "2-1" }, student]) {
+    assert.equal(canManageStudent(actor, student), false);
+    assert.throws(() => softDeletePoint([{ id: "p", studentId: "s" }], "p", actor, [student], "now"));
+  }
+  assert.equal(canManageStudent({ role: "teacher", homeroom: "1-2" }, student), true);
+  assert.equal(canManageStudent({ role: "admin" }, student), true);
+});
+
+test("point magnitude honors backend upper bound", () => {
+  for (const value of [0, -1, 101, NaN, Infinity]) assert.equal(validPointMagnitude(value), false);
+  for (const value of [1, 100]) assert.equal(validPointMagnitude(value), true);
+});
 
 test("point soft deletion preserves audit data and enforces teacher scope", () => {
   const student = { id: "s", role: "student", grade: 1, classNo: 2 };

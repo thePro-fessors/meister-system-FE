@@ -8,3 +8,9 @@ export function isInTeacherScope(teacher: User, student: User): boolean {
   return teacher.homeroom === `${student.grade}학년 ${student.classNo}반` ||
     teacher.homeroom === `${student.grade}-${student.classNo}`;
 }
+
+// Demo mutations fail closed until explicit server reviewer assignments exist.
+export function canManageStudent(teacher: User, student: User): boolean {
+  return (teacher.role === "admin" || (teacher.role === "teacher" && !!teacher.homeroom))
+    && isInTeacherScope(teacher, student);
+}

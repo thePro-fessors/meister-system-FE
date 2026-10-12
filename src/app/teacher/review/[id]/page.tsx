@@ -7,7 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { StatusPill } from "@/components/StatusPill";
-import { isInTeacherScope } from "@/lib/teacherScope";
+import { canManageStudent } from "@/lib/teacherScope";
 import { AiServicePanel } from "@/components/AiServicePanel";
 import { computeAreaResults } from "@/lib/grading";
 
@@ -18,7 +18,7 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
 
   const submission = submissions.find((s) => s.id === id);
   const student = users.find((u) => u.id === submission?.studentId);
-  const canReview = !!user && !!student && isInTeacherScope(user, student);
+  const canReview = !!user && !!student && canManageStudent(user, student);
   const year = criteria.find((c) => c.year === submission?.year);
   const item = year?.gradeCriteria
     .find((g) => g.grade === student?.grade)
@@ -26,7 +26,7 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
     ?.items.find((i) => i.id === submission?.itemId);
 
   const [scoreInput, setScoreInput] = useState(submission?.score?.toString() ?? item?.maxScore.toString() ?? "");
-  const [comment, setComment] = useState(submission?.teacherComment ?? "");
+  const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<"approve" | "reject">("approve");
   const [rejectStatus, setRejectStatus] = useState<"반려" | "재제출요청">("반려");
@@ -161,6 +161,7 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
           {alreadyApproved && (
             <div className="rounded-lg border border-certified/40 bg-certified-soft p-5 text-sm text-certified">
               이미 인정완료 처리된 자료입니다. 부여 점수: {submission.score}점
+              {submission.teacherComment && <p className="mt-2">기존 의견: {submission.teacherComment}</p>}
             </div>
           )}
           {(
