@@ -82,15 +82,8 @@ button:not(:disabled), select { cursor: pointer; }
 .competency-track { height: 12px; border-radius: 3px; background: #edf1f7; position: relative; }
 .competency-track::after { content: ""; position: absolute; left: 80%; top: -4px; bottom: -4px; border-left: 2px solid #8998ab; }
 .competency-fill { height: 100%; border-radius: 3px; background: var(--brass); }
-.login-layout { min-height: 100dvh; display: grid; grid-template-columns: 1.1fr 1fr; }
-.login-intro { position: relative; display: flex; flex-direction: column; justify-content: space-between; padding: clamp(32px, 6vw, 90px); background: #e6edf8; overflow: hidden; }
-.login-intro::after { content: ""; position: absolute; width: 440px; height: 440px; border: 70px solid #d9e3f4; border-radius: 50%; bottom: -260px; right: -200px; pointer-events: none; }
-.login-intro::before { content: ""; position: absolute; width: 640px; height: 640px; background-color: #d9e3f4; border-radius: 50%; bottom: 260px; right: 200px; pointer-events: none; }
+.login-layout { min-height: 100dvh; display: grid; grid-template-columns: minmax(0, 1fr); }
 .login-form-panel { display: grid; place-items: center; padding: 48px 28px; background: white; }
-.login-heading { font-size: clamp(2.1rem, 4vw, 3.75rem); line-height: 1.25; font-weight: 700; letter-spacing: -.065em; }
-.login-record { margin-top: 40px; max-width: 390px; border-left: 3px solid var(--brass); padding: 4px 0 4px 24px; }
-.login-record li { display: flex; justify-content: space-between; gap: 24px; padding: 9px 0; font-size: .9rem; }
-.login-record span:last-child { color: var(--ink-soft); }
 
 @media (min-width: 768px) {
   .app-sidebar { position: sticky; top: 0; height: 100dvh; }
@@ -101,9 +94,6 @@ button:not(:disabled), select { cursor: pointer; }
   .record-summary > div + div { border-left: 0; padding-left: 0; }
   .competency-row { grid-template-columns: 1fr auto 30px; gap: 12px; padding: 20px; }
   .competency-track { grid-row: 2; grid-column: 1 / -1; margin: 4px 0; }
-  .login-layout { grid-template-columns: 1fr; }
-  .login-intro { padding: 28px; gap: 32px; }
-  .login-record { display: none; }
   .login-form-panel { padding: 32px 24px; }
 }
 @media (prefers-reduced-motion: no-preference) {

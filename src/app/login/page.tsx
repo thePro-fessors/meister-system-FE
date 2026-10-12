@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ShieldCheck } from "lucide-react";
+import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { loginDestination } from "@/lib/navigation";
 
@@ -39,27 +39,10 @@ export default function LoginPage() {
 
   return (
     <div className="login-layout">
-      <section className="login-intro" aria-labelledby="intro-title">
-        <div className="flex items-center gap-3">
-          <span className="brand-mark"><ShieldCheck size={24} strokeWidth={1.75} /></span>
-          <p className="text-sm font-semibold text-ink">마이스터역량인증제</p>
-        </div>
-        <div className="relative z-10 py-4 lg:py-12">
-          <h1 id="intro-title" className="login-heading text-ink">배운 것에서<br />해낸 것으로.</h1>
-          <p className="mt-6 max-w-sm text-sm leading-7 text-ink-soft">자격증, 프로젝트, 봉사와 독서까지.<br />학교에서 쌓은 경험을 나만의 역량 기록으로 남기세요.</p>
-          <ul className="login-record" aria-label="기록할 수 있는 역량">
-            <li><span>직업기초능력</span><span>협업과 문제 해결</span></li>
-            <li><span>전문기술역량</span><span>자격증과 프로젝트</span></li>
-            <li><span>인성/직업의식</span><span>봉사와 학교생활</span></li>
-            <li><span>인문학적 소양</span><span>독서와 인문 활동</span></li>
-            <li><span>외국어 능력</span><span>언어와 소통</span></li>
-          </ul>
-        </div>
-      </section>
       <div className="login-form-panel">
       <div className="w-full max-w-sm">
         <div className="mb-8">
-          <h2 className="font-display text-3xl font-bold text-ink">내 기록 시작하기</h2>
+          <h1 className="font-display text-3xl font-bold text-ink">내 기록 시작하기</h1>
           <p className="mt-3 text-sm text-ink-soft">계정으로 로그인하면 역할에 맞는 화면이 열립니다.</p>
         </div>
 
@@ -109,6 +92,11 @@ export default function LoginPage() {
             {loading ? "세션 확인 중..." : pending ? "로그인 중..." : "로그인"}
           </button>
         </form>
+
+        <p className="mt-6 text-center text-sm text-ink-soft">
+          아직 계정이 없나요?{" "}
+          <Link href="/signup" className="font-semibold text-brass hover:underline">회원가입</Link>
+        </p>
 
         <div className="mt-9 border-t border-line pt-6">
           <p className="mb-2.5 text-xs font-medium text-ink-soft">체험용 계정 (비밀번호 1234)</p>

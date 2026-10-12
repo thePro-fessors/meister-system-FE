@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { DemoUser, PointRecord, Submission, User, YearCriteria } from "@/lib/types";
-import { createDemoAuthService, publicUser, type AuthService } from "@/lib/auth-service";
+import { AuthError, createDemoAuthService, publicUser, type AuthService } from "@/lib/auth-service";
 import { SEED_CRITERIA, SEED_POINTS, SEED_SUBMISSIONS, SEED_USERS } from "@/lib/seed";
 import { softDeletePoint } from "@/lib/point-actions";
 
@@ -52,6 +52,7 @@ function loadInitial(): DataShape {
 interface DataContextValue extends Omit<DataShape, "users"> {
   users: User[];
   authService: AuthService;
+  registerStudent: (input: Pick<DemoUser, "id" | "password" | "name" | "grade" | "classNo" | "number">) => void;
   addSubmission: (s: Submission) => void;
   updateSubmission: (id: string, patch: Partial<Submission>) => void;
   deleteSubmission: (id: string, studentId: string) => void;
@@ -114,6 +115,30 @@ function HydratedDataProvider({ children }: { children: React.ReactNode }) {
       },
       users: data.users.map(publicUser),
       authService,
+      registerStudent: (input) => {
+        const id = input.id.trim();
+        const name = input.name.trim();
+        if (!/^[A-Za-z0-9_]{4,20}$/.test(id) || !name || name.length > 50 || input.password.length < 8 || input.password.length > 128) {
+          throw new AuthError("INVALID_INPUT", "이름, 아이디 및 비밀번호 입력 조건을 확인해 주세요.");
+        }
+        if (![input.grade, input.classNo, input.number].every((value) => Number.isInteger(value) && value! >= 1)
+          || input.grade! > 3 || input.classNo! > 99 || input.number! > 99) {
+          throw new AuthError("INVALID_INPUT", "학년, 반, 번호를 올바르게 입력해 주세요.");
+        }
+        if (data.users.some((user) => user.id.toLowerCase() === id.toLowerCase())) {
+          throw new AuthError("DUPLICATE_ID", "이미 사용 중인 아이디입니다.");
+        }
+        const next = { ...data, users: [...data.users, {
+          id, name, password: input.password, role: "student" as const,
+          grade: input.grade, classNo: input.classNo, number: input.number,
+        }] };
+        try {
+          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+        } catch {
+          throw new AuthError("STORAGE_UNAVAILABLE", "계정을 저장하지 못했습니다. 브라우저 저장소 설정을 확인해 주세요.");
+        }
+        setData(next);
+      },
       addSubmission: (s) => setData((d) => ({ ...d, submissions: [s, ...d.submissions] })),
       deleteSubmission: (id, studentId) => setData((d) => ({
         ...d,
