@@ -26,7 +26,7 @@ function loadInitial(): DataShape {
   }
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw) {
+    if (raw !== null) {
       const parsed: unknown = JSON.parse(raw);
       if (matchesShape(parsed, {
         users: [{ id: "", password: "", name: "", role: "" }],
@@ -37,9 +37,10 @@ function loadInitial(): DataShape {
         const data = parsed as DataShape;
         if (data.users.every((u) => ["student", "teacher", "admin"].includes(u.role))) return data;
       }
+      throw new Error("저장 데이터 형식이 올바르지 않습니다. 원본 데이터는 보존되었습니다.");
     }
-  } catch {
-    // ignore corrupt storage
+  } catch (cause) {
+    throw cause instanceof Error ? cause : new Error("브라우저 저장 데이터를 읽을 수 없습니다.");
   }
   return {
     users: SEED_USERS,
@@ -83,7 +84,50 @@ const subscribeToHydration = () => () => {};
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const hydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false);
   if (!hydrated) return <div role="status">불러오는 중...</div>;
-  return <HydratedDataProvider>{children}</HydratedDataProvider>;
+  return <SingleWriter>{children}</SingleWriter>;
+}
+
+function SingleWriter({ children }: { children: React.ReactNode }) {
+  const [state, setState] = useState<"waiting" | "ready" | "unsupported">("waiting");
+  useEffect(() => {
+    if (!navigator.locks) {
+      queueMicrotask(() => setState("unsupported"));
+      return;
+    }
+    const controller = new AbortController();
+    let release: (() => void) | undefined;
+    let disposed = false;
+    void navigator.locks.request("meister-app-data-writer", { signal: controller.signal }, async () => {
+      if (disposed) return;
+      await new Promise<void>((resolve) => {
+        release = resolve;
+        setState("ready");
+      });
+    }).catch(() => { if (!disposed) setState("unsupported"); });
+    return () => { disposed = true; controller.abort(); release?.(); };
+  }, []);
+  if (state !== "ready") return <main className="p-8" role="status">
+    {state === "waiting" ? "다른 탭에서 사용 중이면 그 탭을 닫아 주세요. 최신 데이터를 불러오기 위해 기다리는 중입니다." : "이 브라우저에서는 안전한 데모 저장을 지원하지 않습니다. HTTPS 또는 localhost에서 최신 브라우저를 사용해 주세요."}
+  </main>;
+  return <StorageRecovery><HydratedDataProvider>{children}</HydratedDataProvider></StorageRecovery>;
+}
+
+class StorageRecovery extends React.Component<{ children: React.ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() { return { failed: true }; }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return <main className="space-y-4 p-8" role="alert">
+      <h1 className="text-xl font-semibold">데모 데이터를 불러오지 못했습니다</h1>
+      <p>저장 데이터는 자동 초기화하지 않았습니다. 브라우저 저장소 설정을 확인하거나 개발자 도구에서 데이터를 백업한 후 다시 시도해 주세요. 백업에는 데모 비밀번호가 포함되므로 공유하지 마세요.</p>
+      <button className="rounded border p-2" onClick={() => window.location.reload()}>다시 시도</button>
+      <button className="ml-3 rounded border p-2" onClick={() => {
+        if (!window.confirm("백업하지 않은 데모 데이터가 모두 삭제됩니다. 초기화할까요?")) return;
+        try { window.localStorage.removeItem(STORAGE_KEY); window.location.reload(); }
+        catch { window.alert("저장소에 접근할 수 없습니다. 브라우저 설정을 확인해 주세요."); }
+      }}>데모 데이터 초기화</button>
+    </main>;
+  }
 }
 
 function HydratedDataProvider({ children }: { children: React.ReactNode }) {
