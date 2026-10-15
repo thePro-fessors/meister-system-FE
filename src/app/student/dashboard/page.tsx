@@ -8,7 +8,7 @@ import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { GradeBadge } from "@/components/GradeBadge";
 import { StatusPill } from "@/components/StatusPill";
-import { computeAreaResults, computeCertStatus } from "@/lib/grading";
+import { computeAreaResults, computeCertStatus, PROVISIONAL_GRADING_NOTICE } from "@/lib/grading";
 import { generateCoachingTip } from "@/lib/ai";
 
 export default function StudentDashboard() {
@@ -42,6 +42,7 @@ export default function StudentDashboard() {
 
   return (
     <div>
+      <p role="note" className="mb-4 rounded border border-line p-3 text-sm text-ink-soft">{PROVISIONAL_GRADING_NOTICE}</p>
       <PageHeader
         eyebrow={`${year.year}학년도`}
         title="내 인증 현황"

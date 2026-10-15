@@ -7,8 +7,8 @@ import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { StatusPill } from "@/components/StatusPill";
 import { canManageStudent } from "@/lib/teacherScope";
-import { validPointMagnitude } from "@/lib/point-actions";
-import { AREA_NAMES, AreaName, PointType } from "@/lib/types";
+import { canModifyPoint, validPointMagnitude } from "@/lib/point-actions";
+import { PointType } from "@/lib/types";
 import { academicYear } from "@/lib/grading";
 import { DeletePointButton } from "@/components/DeletePointButton";
 
@@ -26,8 +26,6 @@ export default function TeacherPointsPage() {
   const [score, setScore] = useState(1);
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [reason, setReason] = useState("");
-  const [reflect, setReflect] = useState(false);
-  const [reflectedArea, setReflectedArea] = useState<AreaName>("인성/직업의식");
   const [formError, setFormError] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -52,7 +50,7 @@ export default function TeacherPointsPage() {
       return;
     }
     if (!date || !validPointMagnitude(score)) {
-      setFormError("발생일과 0 초과 100 이하의 점수를 입력해 주세요.");
+      setFormError("발생일과 1~5의 정수 점수를 입력해 주세요.");
       return;
     }
     setFormError(null);
@@ -65,8 +63,7 @@ export default function TeacherPointsPage() {
       date,
       year: academicYear(date),
       teacherId: user!.id,
-      reflected: reflect,
-      reflectedArea: reflect ? reflectedArea : undefined,
+      reflected: false,
     });
     setReason("");
     setScore(1);
@@ -79,17 +76,19 @@ export default function TeacherPointsPage() {
   }
 
   function saveEdit(id: string, type: PointType) {
-    if (!user || !list.some((p) => p.id === id) || !editReason.trim() || !validPointMagnitude(editScore)) {
-      setFormError("수정 사유와 0 초과 100 이하의 점수를 입력해 주세요.");
+    const point = list.find((p) => p.id === id);
+    const student = users.find((u) => u.id === point?.studentId);
+    if (!user || !point || !student || !canModifyPoint(user, point, student) || !editReason.trim() || !validPointMagnitude(editScore)) {
+      setFormError("수정 권한, 사유와 1~5의 정수 점수를 확인해 주세요.");
       return;
     }
     setFormError(null);
-    updatePoint(
+    try { updatePoint(
       id,
       { score: type === "상점" ? Math.abs(editScore) : -Math.abs(editScore) },
       user!.id,
       editReason
-    );
+    ); } catch (cause) { setFormError(cause instanceof Error ? cause.message : "수정하지 못했습니다."); return; }
     setEditingId(null);
   }
 
@@ -128,7 +127,7 @@ export default function TeacherPointsPage() {
           <input
             type="number"
             min={1}
-            max={100}
+            max={5}
             value={score}
             onChange={(e) => setScore(Number(e.target.value))}
             className="w-full rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-brass"
@@ -152,25 +151,7 @@ export default function TeacherPointsPage() {
             className="w-full rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-brass"
           />
         </div>
-        <div className="flex items-end gap-2">
-          <label className="flex items-center gap-1.5 text-sm text-ink-soft">
-            <input type="checkbox" checked={reflect} onChange={(e) => setReflect(e.target.checked)} />
-            인증 점수 반영
-          </label>
-          {reflect && (
-            <select
-              value={reflectedArea}
-              onChange={(e) => setReflectedArea(e.target.value as AreaName)}
-              className="rounded-md border border-line px-2 py-1.5 text-sm outline-none focus:border-brass"
-            >
-              {AREA_NAMES.map((a) => (
-                <option key={a} value={a}>
-                  {a}
-                </option>
-              ))}
-            </select>
-          )}
-        </div>
+        <p className="text-sm text-ink-soft">학년도 순상점이 10점 이상이면 인성/봉사 항목에 5점이 자동 반영됩니다.</p>
         <div className="flex items-end">
           <button
             type="submit"
@@ -212,7 +193,7 @@ export default function TeacherPointsPage() {
                     <input
                       type="number"
                       min={1}
-                      max={100}
+                      max={5}
                       value={editScore}
                       onChange={(e) => setEditScore(Number(e.target.value))}
                       className="w-16 rounded-md border border-line px-2 py-1 text-sm outline-none focus:border-brass"
@@ -222,10 +203,10 @@ export default function TeacherPointsPage() {
                       {p.score > 0 ? `+${p.score}` : p.score}
                     </span>
                   )}
-                  <DeletePointButton id={p.id} />
+                  {user && users.some((s) => s.id === p.studentId && canModifyPoint(user, p, s)) && <DeletePointButton id={p.id} />}
                 </td>
                 <td className="text-ink">{p.reason}</td>
-                <td className="text-ink-soft">{p.reflected ? `반영 (${p.reflectedArea})` : "미반영"}</td>
+                <td className="text-ink-soft">순상점 자동 산정</td>
                 <td>
                   {editingId === p.id ? (
                     <div className="flex items-center gap-2">
@@ -244,6 +225,7 @@ export default function TeacherPointsPage() {
                     </div>
                   ) : (
                     <button
+                      disabled={!user || !users.some((s) => s.id === p.studentId && canModifyPoint(user, p, s))}
                       onClick={() => startEdit(p.id, p.score)}
                       className="inline-flex items-center gap-1 text-xs text-ink-soft hover:text-ink"
                     >

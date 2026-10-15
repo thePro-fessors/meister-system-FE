@@ -6,7 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { StatusPill } from "@/components/StatusPill";
-import { isInTeacherScope } from "@/lib/teacherScope";
+import { canManageStudent } from "@/lib/teacherScope";
 import { computeAreaResults, computeCertStatus } from "@/lib/grading";
 import { AREA_NAMES, AreaName, SubmissionStatus } from "@/lib/types";
 
@@ -24,7 +24,7 @@ export default function TeacherStudentsPage() {
   const year = criteria.find((c) => c.active) ?? criteria[0];
 
   const scopedStudents = useMemo(
-    () => (user ? users.filter((u) => u.role === "student" && isInTeacherScope(user, u)) : []),
+    () => (user ? users.filter((u) => u.role === "student" && canManageStudent(user, u)) : []),
     [users, user]
   );
 

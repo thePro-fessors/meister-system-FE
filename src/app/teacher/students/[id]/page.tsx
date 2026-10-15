@@ -9,7 +9,7 @@ import { GradeBadge } from "@/components/GradeBadge";
 import { StatusPill } from "@/components/StatusPill";
 import { academicYear, computeAreaResults } from "@/lib/grading";
 import { useAuth } from "@/context/AuthContext";
-import { isInTeacherScope } from "@/lib/teacherScope";
+import { canManageStudent } from "@/lib/teacherScope";
 import { DeletePointButton } from "@/components/DeletePointButton";
 
 export default function StudentDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -33,7 +33,7 @@ export default function StudentDetailPage({ params }: { params: Promise<{ id: st
     [submissions, id]
   );
 
-  if (!student || !user || !isInTeacherScope(user, student)) {
+    if (!student || !user || !canManageStudent(user, student)) {
     return <p role="alert">해당 학생을 조회할 권한이 없거나 학생을 찾을 수 없습니다.</p>;
   }
 

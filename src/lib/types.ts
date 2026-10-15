@@ -1,5 +1,15 @@
 export type Role = "student" | "teacher" | "admin";
 
+export type TeacherDuty = "homeroom" | "assistant_homeroom" | "grade_head" | "subject_teacher" | "dedicated_evaluator" | "vice_principal";
+export interface TeacherScope {
+  grade?: number;
+  classrooms?: string[];
+  areas?: AreaName[];
+  itemIds?: string[];
+  studentIds?: number[];
+  schoolWide?: boolean;
+}
+
 export interface User {
   id: string; // 로그인 아이디. 학생/교사 DB ID와 구분한다.
   uuid?: string;
@@ -11,6 +21,8 @@ export interface User {
   classNo?: number; // 학생
   number?: number; // 학생
   homeroom?: string; // 교사 담당 학급, 예: "1-2"
+  teacherDuty?: TeacherDuty;
+  teacherScope?: TeacherScope;
 }
 
 // Only the local demo data source may contain a plaintext password.
@@ -18,22 +30,20 @@ export interface DemoUser extends User {
   password: string;
 }
 
-export type AreaName =
+export type LegacyAreaName =
   | "직업기초능력"
   | "전문기술역량"
   | "인성/직업의식"
   | "인문학적 소양"
   | "외국어 능력";
 
-export const AREA_NAMES: AreaName[] = [
-  "직업기초능력",
-  "전문기술역량",
-  "인성/직업의식",
-  "인문학적 소양",
-  "외국어 능력",
-];
+export type CurrentAreaName = "전공역량" | "외국어역량" | "자격취득" | "인성/봉사" | "창체/독서";
+export type AreaName = CurrentAreaName | LegacyAreaName;
+export const AREA_NAMES: CurrentAreaName[] = ["전공역량", "외국어역량", "자격취득", "인성/봉사", "창체/독서"];
 
 export type ScoringType =
+  | "누적합산형"
+  | "최고점수반영형"
   | "고정점수형"
   | "등급환산형"
   | "구간점수형"
@@ -51,6 +61,7 @@ export interface EvalItem {
   active: boolean;
   requiresEvidence: boolean;
   description?: string; // 산정 방식 설명
+  autoCalculated?: boolean;
 }
 
 export interface AreaCriteria {
@@ -118,6 +129,7 @@ export interface PointRecord {
 export type CertStatus = "인증 가능" | "미달성" | "검토중" | "보완 필요";
 
 export interface AreaResult {
+  gradingPolicy?: "provisional";
   area: AreaName;
   score: number;
   maxScore: number;

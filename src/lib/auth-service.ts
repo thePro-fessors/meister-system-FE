@@ -23,6 +23,14 @@ export function publicUser(user: DemoUser): User {
     id: user.id, name: user.name, role: user.role,
     uuid: user.uuid, studentId: user.studentId, teacherId: user.teacherId,
     grade: user.grade, classNo: user.classNo, number: user.number, homeroom: user.homeroom,
+    teacherDuty: user.teacherDuty,
+    teacherScope: user.teacherScope ? {
+      ...user.teacherScope,
+      classrooms: user.teacherScope.classrooms?.slice(),
+      areas: user.teacherScope.areas?.slice(),
+      itemIds: user.teacherScope.itemIds?.slice(),
+      studentIds: user.teacherScope.studentIds?.slice(),
+    } : undefined,
   };
 }
 

@@ -9,6 +9,9 @@ export function isUnderReview(submission: Submission): boolean {
   return ["제출완료", "검토중", "재제출요청"].includes(submission.status);
 }
 
+export const PROVISIONAL_GRADING_NOTICE = "등급(S 90% / A 80% / B 70%) 및 전 영역 A 이상 인증 판정은 기존 데모의 임시 기준입니다. 명세에 공식 등급/인증 기준은 정의되어 있지 않습니다.";
+
+/** Compatibility-only demo thresholds, not official certification rules. */
 export function gradeFromRatio(ratio: number): "S" | "A" | "B" | "미달성" {
   if (ratio >= 0.9) return "S";
   if (ratio >= 0.8) return "A";
@@ -16,7 +19,13 @@ export function gradeFromRatio(ratio: number): "S" | "A" | "B" | "미달성" {
   return "미달성";
 }
 
-/** 학생의 인정완료 제출 + 반영된 상벌점을 합산해 영역별 결과를 계산한다. */
+export function netPointsForYear(studentId: string, year: number, points: PointRecord[]): number {
+  return points
+    .filter((p) => p.studentId === studentId && !p.deletedAt && (p.year ?? academicYear(p.date)) === year)
+    .reduce((sum, p) => sum + (Number.isFinite(p.score) ? (p.type === "벌점" ? -Math.abs(p.score) : Math.abs(p.score)) : 0), 0);
+}
+
+/** Approved item scores are capped before applying the area cap. */
 export function computeAreaResults(
   studentId: string,
   year: number,
@@ -26,7 +35,8 @@ export function computeAreaResults(
   points: PointRecord[]
 ): AreaResult[] {
   const gradeCriteria = criteria?.gradeCriteria.find((g) => g.grade === grade);
-  if (!gradeCriteria) return [];
+  if (!gradeCriteria || criteria?.year !== year) return [];
+  const netPoints = netPointsForYear(studentId, year, points);
 
   return gradeCriteria.areas.map((areaCrit) => {
     const approved = submissions.filter(
@@ -37,25 +47,24 @@ export function computeAreaResults(
         s.status === "인정완료"
     );
     const submittedScore = areaCrit.items.reduce((sum, item) => {
+      if (item.autoCalculated) {
+        return sum + (netPoints >= 10 ? Math.min(5, Math.max(0, item.maxScore)) : 0);
+      }
       const scores = approved.filter((s) => s.itemId === item.id)
         .map((s) => Number.isFinite(s.score) ? Math.max(0, s.score!) : 0);
-      const score = item.scoringType === "최상위인정형"
+      const score = ["최상위인정형", "최고점수반영형", "고정점수형"].includes(item.scoringType)
         ? Math.max(0, ...scores)
         : scores.reduce((total, value) => total + value, 0);
-      return sum + Math.min(score, item.maxScore);
+      return sum + Math.min(score, Math.max(0, item.maxScore));
     }, 0);
 
-    const reflectedPoints = points
-      .filter((p) => p.studentId === studentId && (p.year ?? academicYear(p.date)) === year && p.reflected && p.reflectedArea === areaCrit.area)
-      .reduce((sum, p) => sum + p.score, 0);
-
-    let total = submittedScore + reflectedPoints;
-    total = Math.max(0, Math.min(total, areaCrit.maxScore));
+    const total = Math.max(0, Math.min(submittedScore, areaCrit.maxScore));
 
     const ratio = areaCrit.maxScore > 0 ? total / areaCrit.maxScore : 0;
     const grade_ = gradeFromRatio(ratio);
 
     return {
+      gradingPolicy: "provisional",
       area: areaCrit.area,
       score: Math.round(total * 10) / 10,
       maxScore: areaCrit.maxScore,
@@ -65,6 +74,7 @@ export function computeAreaResults(
   });
 }
 
+/** Provisional legacy demo policy; the CSV does not define certification thresholds. */
 export function computeCertStatus(
   results: AreaResult[],
   hasUnderReview: boolean
@@ -79,6 +89,11 @@ export function computeCertStatus(
 }
 
 export const areaKeywordMap: Record<AreaName, string[]> = {
+  "전공역량": ["프로젝트", "포트폴리오", "깃허브", "github", "해커톤", "알고리즘", "경진대회", "산학", "오픈소스", "pull request", "전공"],
+  "외국어역량": ["토익", "toeic", "영어", "어휘", "번역", "외국어", "회화", "브릿지"],
+  "자격취득": ["자격증", "기능사", "네트워크관리사", "sqld", "리눅스마스터", "aws", "클라우드", "컴퓨터활용능력", "mos"],
+  "인성/봉사": ["봉사", "vms", "1365", "임원", "학생회", "선행", "표창", "또래상담", "멘토링 봉사", "안전 도우미"],
+  "창체/독서": ["독서", "독후", "서평", "인문", "창의적", "축제", "기업 탐방", "진로", "체육", "플래너"],
   "직업기초능력": ["의사소통", "문제해결", "협업", "발표", "보고서", "프로젝트 수행", "팀플"],
   "전문기술역량": ["자격증", "산업기사", "기능사", "기사", "대회", "공모전", "코딩", "제작", "실습"],
   "인성/직업의식": ["봉사", "봉사활동", "선행", "규정", "생활", "출결", "리더십", "학급"],

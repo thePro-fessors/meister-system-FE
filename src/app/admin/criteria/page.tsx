@@ -7,6 +7,8 @@ import { PageHeader } from "@/components/AppShell";
 import { EvalItem, ScoringType } from "@/lib/types";
 
 const SCORING_TYPES: ScoringType[] = [
+  "누적합산형",
+  "최고점수반영형",
   "고정점수형",
   "등급환산형",
   "구간점수형",
@@ -95,7 +97,7 @@ export default function AdminCriteriaPage() {
                                   id,
                                   name: "새 평가 항목",
                                   maxScore: 10,
-                                  scoringType: "고정점수형",
+                                  scoringType: "누적합산형",
                                   active: true,
                                   requiresEvidence: true,
                                 },
@@ -278,7 +280,8 @@ export default function AdminCriteriaPage() {
 
       <div className="mt-8 overflow-hidden rounded-lg border border-line bg-paper-raised">
         <div className="border-b border-line px-5 py-3">
-          <p className="font-display text-sm font-semibold text-ink">자동 등급 환산 기준</p>
+          <p className="font-display text-sm font-semibold text-ink">임시 등급 환산 기준 (데모)</p>
+          <p className="mt-2 text-sm text-ink-soft">공식 등급 및 최종 인증 판정 기준은 명세에 정의되어 있지 않습니다. 아래 70/80/90% 기준은 임시 데모 정책이며, 공식 인증 결과로 사용할 수 없습니다.</p>
         </div>
         <table className="ledger-table">
           <thead>

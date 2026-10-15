@@ -6,7 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { StatusPill } from "@/components/StatusPill";
-import { isInTeacherScope } from "@/lib/teacherScope";
+import { canReviewSubmission, isInTeacherScope } from "@/lib/teacherScope";
 
 export default function TeacherDashboard() {
   const { user } = useAuth();
@@ -20,8 +20,8 @@ export default function TeacherDashboard() {
   }, [users, user]);
 
   const scoped = useMemo(
-    () => submissions.filter((s) => scopedStudentIds.has(s.studentId)),
-    [submissions, scopedStudentIds]
+    () => submissions.filter((s) => scopedStudentIds.has(s.studentId) && !!user && users.some((student) => student.id === s.studentId && canReviewSubmission(user, student, s))),
+    [submissions, scopedStudentIds, user, users]
   );
 
   const pending = scoped.filter((s) => s.status === "제출완료" || s.status === "검토중");

@@ -15,6 +15,7 @@ import {
   Users,
   CalendarRange,
   Gauge,
+  MessageCircle,
 } from "lucide-react";
 
 interface NavItem {
@@ -29,6 +30,7 @@ const NAV: Record<Role, NavItem[]> = {
     { href: "/student/submissions/new", label: "증빙자료 제출", icon: Upload },
     { href: "/student/submissions", label: "제출 내역", icon: ClipboardList },
     { href: "/student/points", label: "상벌점 내역", icon: Star },
+    { href: "/student/chat", label: "역량인증 도우미", icon: MessageCircle },
   ],
   teacher: [
     { href: "/teacher/chat", label: "학급 지도 도우미", icon: Users },
@@ -44,6 +46,8 @@ const NAV: Record<Role, NavItem[]> = {
     { href: "/teacher/points", label: "상벌점 관리", icon: Star },
     { href: "/admin/years", label: "학년도 관리", icon: CalendarRange },
     { href: "/admin/criteria", label: "기준 · 배점 관리", icon: Settings2 },
+    { href: "/admin/batch", label: "일괄 등록 · 내보내기", icon: Upload },
+    { href: "/admin/audit", label: "감사 로그", icon: ClipboardList },
   ],
 };
 

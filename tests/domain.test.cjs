@@ -11,8 +11,8 @@ require.extensions[".ts"] = (module, filename) => {
   });
   module._compile(outputText, filename);
 };
-const { computeAreaResults, gradeFromRatio, academicYear, isUnderReview } = require("../src/lib/grading.ts");
-const { isInTeacherScope, canManageStudent } = require("../src/lib/teacherScope.ts");
+const { computeAreaResults, gradeFromRatio, academicYear, isUnderReview, netPointsForYear } = require("../src/lib/grading.ts");
+const { isInTeacherScope, canManageStudent, canReviewSubmission } = require("../src/lib/teacherScope.ts");
 const { createDemoAuthService } = require("../src/lib/auth-service.ts");
 const { parseLoginResponse, parseMeResponse } = require("../src/lib/auth-contract.ts");
 const { homeForRole, canAccessRole, loginDestination } = require("../src/lib/navigation.ts");
@@ -29,14 +29,15 @@ test("mutation permissions fail closed for unassigned teachers", () => {
 });
 
 test("point magnitude honors backend upper bound", () => {
-  for (const value of [0, -1, 101, NaN, Infinity]) assert.equal(validPointMagnitude(value), false);
-  for (const value of [1, 100]) assert.equal(validPointMagnitude(value), true);
+  for (const value of [0, -1, 6, 1.5, NaN, Infinity]) assert.equal(validPointMagnitude(value), false);
+  for (const value of [1, 5]) assert.equal(validPointMagnitude(value), true);
 });
 
 test("point soft deletion preserves audit data and enforces teacher scope", () => {
   const student = { id: "s", role: "student", grade: 1, classNo: 2 };
   const teacher = { id: "t", role: "teacher", homeroom: "1-2" };
-  const points = [{ id: "p", studentId: "s", score: -3 }];
+  const points = [{ id: "p", studentId: "s", teacherId: "t", score: -3 }];
+  assert.throws(() => softDeletePoint(points, "p", { ...teacher, id: "other" }, [student], "now"));
   const deleted = softDeletePoint(points, "p", teacher, [student], "2026-10-06");
   assert.equal(deleted[0].deletedBy, "t");
   assert.equal(deleted[0].score, -3);
@@ -113,7 +114,7 @@ const area = "전문기술역량";
 const criteria = {
   year: 2026, active: true,
   gradeCriteria: [{ grade: 1, areas: [{ area, maxScore: 100, items: [
-    { id: "item", maxScore: 30, scoringType: "최대점제한형" },
+    { id: "item", active: true, maxScore: 30, scoringType: "최대점제한형" },
   ] }] }],
 };
 const submission = { studentId: "student", year: 2026, area, itemId: "item", status: "인정완료", score: 20 };
@@ -136,7 +137,7 @@ test("ignore other students, years, pending work and nonfinite scores", () => {
 });
 test("points are isolated by academic year, including legacy records", () => {
   const point = { studentId: "student", reflected: true, reflectedArea: area, score: 5 };
-  assert.equal(calculate([], [
+  assert.equal(netPointsForYear("student", 2026, [
     { ...point, date: "2026-02-28" },
     { ...point, date: "2026-03-01" },
     { ...point, date: "2027-02-28" },
@@ -160,4 +161,32 @@ test("teacher scope accepts both documented formats and rejects other classes", 
   }
   assert.equal(isInTeacherScope({ role: "teacher", homeroom: "1-3" }, student), false);
   assert.equal(isInTeacherScope({ role: "student" }, student), false);
+});
+
+test("inactive criteria preserve approved scores", () => {
+  const rules = structuredClone(criteria);
+  rules.gradeCriteria[0].areas[0].items[0].active = false;
+  assert.equal(calculate([submission], [], rules), 20);
+});
+
+test("assigned evaluator permissions are submission specific", () => {
+  const student = { id: "student", role: "student", grade: 1, classNo: 1 };
+  const teacher = { role: "teacher", teacherDuty: "dedicated_evaluator", teacherScope: { itemIds: ["item"] } };
+  assert.equal(canManageStudent(teacher, student), false);
+  assert.equal(canReviewSubmission(teacher, student, submission, true), true);
+  assert.equal(canReviewSubmission(teacher, student, { ...submission, itemId: "other" }), false);
+  assert.equal(canReviewSubmission({ ...teacher, teacherDuty: "subject_teacher" }, student, submission, true), false);
+});
+
+test("automatic net-point award respects threshold year and deletion", () => {
+  const rules = { year: 2026, gradeCriteria: [{ grade: 1, areas: [{ area: "인성/봉사", maxScore: 20, items: [{ id: "item-405", active: true, autoCalculated: true, maxScore: 5, scoringType: "고정점수형" }] }] }] };
+  const point = { studentId: "student", year: 2026, type: "상점", score: 10 };
+  assert.equal(calculate([], [point], rules), 5);
+  const copied = structuredClone(rules);
+  copied.gradeCriteria[0].areas[0].items[0].id = "item-405-2027";
+  assert.equal(calculate([], [point], copied), 5);
+  assert.equal(calculate([], [{ ...point, score: 9 }], rules), 0);
+  assert.equal(calculate([], [{ ...point, deletedAt: "now" }], rules), 0);
+  assert.equal(calculate([], [{ ...point, year: 2025 }], rules), 0);
+  assert.equal(calculate([], [point, { ...point, type: "벌점", score: -1 }], rules), 0);
 });

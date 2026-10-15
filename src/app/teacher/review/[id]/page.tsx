@@ -1,14 +1,13 @@
 "use client";
 
-import { use, useState } from "react";
+import { use, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, FileText, Link as LinkIcon } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { StatusPill } from "@/components/StatusPill";
-import { canManageStudent } from "@/lib/teacherScope";
-import { AiServicePanel } from "@/components/AiServicePanel";
+import { canManageStudent, canReviewSubmission } from "@/lib/teacherScope";
 import { computeAreaResults } from "@/lib/grading";
 
 export default function ReviewPage({ params }: { params: Promise<{ id: string }> }) {
@@ -18,7 +17,7 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
 
   const submission = submissions.find((s) => s.id === id);
   const student = users.find((u) => u.id === submission?.studentId);
-  const canReview = !!user && !!student && canManageStudent(user, student);
+  const canReview = !!user && !!student && !!submission && canReviewSubmission(user, student, submission);
   const year = criteria.find((c) => c.year === submission?.year);
   const item = year?.gradeCriteria
     .find((g) => g.grade === student?.grade)
@@ -31,13 +30,24 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
   const [mode, setMode] = useState<"approve" | "reject">("approve");
   const [rejectStatus, setRejectStatus] = useState<"반려" | "재제출요청">("반려");
   const [notice, setNotice] = useState("");
+  const [busy, setBusy] = useState(false);
+  const saving = useRef(false);
 
   const alreadyApproved = submission?.status === "인정완료";
+  const pending = submission?.status === "제출완료" || submission?.status === "검토중";
+  const editable = !!item && !item.autoCalculated && !!year?.active && (pending || alreadyApproved) && !!user && !!student && !!submission && canReviewSubmission(user, student, submission, alreadyApproved);
+  let evidenceLink: string | undefined;
+  try {
+    const url = new URL(submission?.link?.trim() ?? "");
+    if (["http:", "https:"].includes(url.protocol)) evidenceLink = url.href;
+  } catch { /* Legacy demo links may not be valid URLs. */ }
 
   const maxScore = item?.maxScore ?? 0;
 
-  function approve() {
-    if (!submission || !canReview || !item) return;
+  async function approve() {
+    if (saving.current) return;
+    setNotice("");
+    if (!submission || !canReview || !editable || !item) { setError("현재 상태 또는 학년도에서는 심사할 수 없습니다."); return; }
     if (alreadyApproved && !comment.trim()) { setError("점수 수정 사유를 입력해 주세요."); return; }
     const score = Number(scoreInput);
     if (!scoreInput.trim() || !Number.isFinite(score) || score < 0) {
@@ -49,35 +59,47 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
       return;
     }
     setError(null);
-    updateSubmission(submission.id, {
+    saving.current = true; setBusy(true);
+    try {
+    await updateSubmission(submission.id, {
       status: "인정완료",
       score,
-      teacherComment: comment || "제출 자료를 확인하여 인정 처리했습니다.",
+      teacherComment: comment.trim() || "제출 자료를 확인하여 인정 처리했습니다.",
       reviewedAt: new Date().toISOString().slice(0, 10),
       reviewerId: user?.id,
       scoreHistory: [
         ...(submission.scoreHistory ?? []),
-        { before: submission.score, after: score, reason: comment || "승인", at: new Date().toISOString() },
+        { before: submission.score, after: score, reason: comment.trim() || "승인", at: new Date().toISOString() },
       ],
     });
     setNotice("저장했습니다. 학생 점수를 다시 계산했습니다 (로컬 데모).");
     setComment("");
+    } catch { setError("저장하지 못했습니다. 다시 시도해 주세요."); }
+    finally { saving.current = false; setBusy(false); }
   }
 
-  function reject() {
-    if (!submission || !canReview || alreadyApproved) return;
+  async function reject() {
+    if (saving.current) return;
+    setNotice("");
+    if (!submission || !canReview || !editable || !pending) { setError("심사 대기 자료만 반려할 수 있습니다."); return; }
     if (!comment.trim()) {
       setError("반려 사유를 반드시 입력해야 합니다.");
       return;
     }
     setError(null);
-    updateSubmission(submission.id, {
+    saving.current = true; setBusy(true);
+    try {
+    await updateSubmission(submission.id, {
       status: rejectStatus,
-      teacherComment: comment,
+      teacherComment: comment.trim(),
+      score: undefined,
       reviewedAt: new Date().toISOString().slice(0, 10),
       reviewerId: user?.id,
     });
     setNotice(`${rejectStatus} 처리했습니다.`);
+    setComment("");
+    } catch { setError("처리하지 못했습니다. 다시 시도해 주세요."); }
+    finally { saving.current = false; setBusy(false); }
   }
 
   const scoreRatio = maxScore > 0 && Number.isFinite(Number(scoreInput))
@@ -105,10 +127,17 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
         description={`${student.name} · ${student.grade}학년 ${student.classNo}반 ${student.number}번`}
       />
       {notice && <p role="status" className="mb-4 text-sm text-certified">{notice}</p>}
-      <AiServicePanel title="AI 심사 Copilot" endpoint="/api/ai/teacher/review-draft" description="평가 기준에 따른 추천 상태, 점수와 검토 의견 초안을 제안합니다. 자동 승인 없이 교사가 검토 후 적용합니다." action="심사 초안 생성" />
+      <section className="mb-5 rounded-lg border border-brass/40 bg-brass-soft/40 p-5">
+        <h2 className="text-sm font-semibold">AI 심사 Copilot · 로컬 데모</h2>
+        <p className="mt-2 text-sm text-ink-soft">서버 AI가 아닌 로컬 검토 문구 템플릿입니다. 파일 내용을 분석하거나 진위를 확인하지 않으며 점수를 자동 부여하지 않습니다.</p>
+        <button disabled={busy || !editable} onClick={() => {
+          setComment(alreadyApproved ? "" : `${submission.itemName}의 인정 기준과 활동일을 확인해 주세요. ${submission.fileName ? "데모 파일은 원본이 저장되지 않으므로 실제 증빙을 별도로 확인해야 합니다." : "첨부 링크와 증빙 요건을 확인해 주세요."}`);
+          setNotice(alreadyApproved ? "점수 수정 사유는 실제 변경 이유를 직접 입력해 주세요." : "로컬 검토 초안을 입력했습니다. 실제 증빙 확인 후 수정해 주세요.");
+        }} className="mt-3 rounded-md border border-line px-3 py-2 text-sm disabled:opacity-50">로컬 심사 초안 생성</button>
+      </section>
       <section aria-live="polite" className="mb-5 rounded-lg border border-line p-4 text-sm">
         <h2 className="font-semibold">학생 영역별 점수 · 로컬 계산</h2>
-        {year && student.grade && computeAreaResults(student.id, year.year, student.grade, year, submissions, points).map((r) => <p key={r.area}>{r.area}: {r.score} / {r.maxScore}</p>)}
+        {user && canManageStudent(user, student) && year && student.grade && computeAreaResults(student.id, year.year, student.grade, year, submissions, points).map((r) => <p key={r.area}>{r.area}: {r.score} / {r.maxScore}</p>)}
       </section>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -146,13 +175,13 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
 
             <div className="mt-3 flex flex-wrap gap-3 text-xs text-ink-soft">
               {submission.fileName && (
-                <span className="inline-flex items-center gap-1">
-                  <FileText size={13} strokeWidth={1.75} /> {submission.fileName}
-                </span>
+                <button type="button" onClick={() => setNotice("로컬 데모는 파일명만 저장합니다. 원본 다운로드 및 1회용 티켓 발급을 제공하지 않습니다.")} className="inline-flex items-center gap-1 text-left">
+                  <FileText size={13} strokeWidth={1.75} /> {submission.fileName} · 다운로드 불가 (데모)
+                </button>
               )}
               {submission.link && (
                 <span className="inline-flex items-center gap-1">
-                  <LinkIcon size={13} strokeWidth={1.75} /> {submission.link}
+                  <LinkIcon size={13} strokeWidth={1.75} /> {evidenceLink ? <a href={evidenceLink} target="_blank" rel="noopener noreferrer" className="break-all underline">{submission.link}</a> : <span>유효하지 않은 링크</span>}
                 </span>
               )}
             </div>
@@ -166,18 +195,19 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
           )}
           {(
             <div className="rounded-lg border border-line bg-paper-raised p-6">
+              {!editable && <p role="status" className="mb-4 text-sm text-alert">활성 학년도의 심사 대기 또는 인정완료 자료만 처리할 수 있습니다. 평가 기준이 없거나 자동연동 항목이면 관리자에게 문의해 주세요.</p>}
               <div className="mb-4 flex gap-2">
                 <button
-                  onClick={() => setMode("approve")}
+                  onClick={() => { setMode("approve"); setError(null); }}
                   className={`rounded-md px-3 py-1.5 text-sm font-medium ${
                     mode === "approve" ? "bg-navy text-white" : "border border-line text-ink-soft"
                   }`}
                 >
-                  승인 · 점수 부여
+                  {alreadyApproved ? "사후 점수 수정" : "승인 · 점수 부여"}
                 </button>
                 <button
-                  onClick={() => setMode("reject")}
-                  disabled={alreadyApproved}
+                  onClick={() => { setMode("reject"); setError(null); }}
+                  disabled={alreadyApproved || !editable || busy}
                   className={`rounded-md px-3 py-1.5 text-sm font-medium ${
                     mode === "reject" ? "bg-alert text-white" : "border border-line text-ink-soft"
                   }`}
@@ -186,11 +216,13 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
                 </button>
               </div>
 
-              {mode === "approve" ? (
+              {mode === "approve" || alreadyApproved ? (
                 <div className="space-y-3">
                   <label className="block text-sm font-medium text-ink">인정 점수 (최대 {maxScore}점)</label>
                   <input
                     type="number"
+                    step="any"
+                    aria-label="인정 점수"
                     value={scoreInput}
                     onChange={(e) => setScoreInput(e.target.value)}
                     max={maxScore}
@@ -207,12 +239,13 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
                     rows={2}
                     className="w-full rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-brass focus:ring-1 focus:ring-brass"
                   />
-                  {error && <p className="rounded-md bg-alert-soft px-3 py-2 text-sm text-alert">{error}</p>}
+                  {error && <p role="alert" className="rounded-md bg-alert-soft px-3 py-2 text-sm text-alert">{error}</p>}
                   <button
+                    disabled={busy || !editable}
                     onClick={approve}
                     className="rounded-md bg-navy px-4 py-2 text-sm font-medium text-white hover:bg-ink"
                   >
-                    {alreadyApproved ? "점수 수정" : "인정 처리"}
+                    {busy ? "저장 중..." : alreadyApproved ? "점수 수정" : "인정 처리"}
                   </button>
                 </div>
               ) : (
@@ -226,8 +259,9 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
                     placeholder="학생에게 보완할 내용을 안내해 주세요."
                     className="w-full rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-brass focus:ring-1 focus:ring-brass"
                   />
-                  {error && <p className="rounded-md bg-alert-soft px-3 py-2 text-sm text-alert">{error}</p>}
+                  {error && <p role="alert" className="rounded-md bg-alert-soft px-3 py-2 text-sm text-alert">{error}</p>}
                   <button
+                    disabled={busy || !editable || !pending}
                     onClick={reject}
                     className="rounded-md bg-alert px-4 py-2 text-sm font-medium text-white hover:bg-red-800"
                   >

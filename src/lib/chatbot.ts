@@ -1,5 +1,6 @@
 import { AreaResult, CertStatus, PointRecord, Submission, User } from "./types";
 import { generateCoachingTip } from "./ai";
+import { academicYear, netPointsForYear, PROVISIONAL_GRADING_NOTICE } from "./grading";
 
 export interface ChatbotContext {
   student: User;
@@ -45,7 +46,7 @@ export function answerStudentQuestion(rawInput: string, ctx: ChatbotContext): Bo
   // 총점 / 내 점수
   if (includesAny(text, ["총점", "내 점수", "점수 알려", "몇 점"])) {
     return {
-      text: `현재 ${ctx.year}학년도 총점은 ${ctx.totalScore.toFixed(1)}점이고, 전체 인증 상태는 '${ctx.certStatus}'입니다.`,
+      text: `현재 ${ctx.year}학년도 총점은 ${ctx.totalScore.toFixed(1)}점이고, 임시 인증 상태는 '${ctx.certStatus}'입니다. ${PROVISIONAL_GRADING_NOTICE}`,
       suggestions: ["어떤 영역이 부족해?", "인증 상태가 무슨 뜻이야?"],
     };
   }
@@ -58,7 +59,7 @@ export function answerStudentQuestion(rawInput: string, ctx: ChatbotContext): Bo
     const lines = ctx.results
       .map((r) => `· ${r.area}: ${r.score}/${r.maxScore}점 (${r.grade === "미달성" ? "미달성" : r.grade + "등급"})`)
       .join("\n");
-    return { text: `영역별 현황이에요.\n${lines}`, suggestions: ["어떤 영역이 부족해?", "미달성이면 어떻게 해?"] };
+    return { text: `영역별 현황이에요.\n${lines}\n${PROVISIONAL_GRADING_NOTICE}`, suggestions: ["어떤 영역이 부족해?", "미달성이면 어떻게 해?"] };
   }
 
   // 미달 / 보완
@@ -76,15 +77,16 @@ export function answerStudentQuestion(rawInput: string, ctx: ChatbotContext): Bo
 
   // 상벌점
   if (includesAny(text, ["상벌점", "벌점", "상점"])) {
-    const total = ctx.points.reduce((sum, p) => sum + p.score, 0);
-    if (ctx.points.length === 0) {
+    const points = ctx.points.filter((p) => p.studentId === ctx.student.id && !p.deletedAt && (p.year ?? academicYear(p.date)) === ctx.year);
+    const total = netPointsForYear(ctx.student.id, ctx.year, points);
+    if (points.length === 0) {
       return { text: "등록된 상벌점 내역이 없어요." };
     }
-    const latest = [...ctx.points].sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+    const latest = [...points].sort((a, b) => (a.date < b.date ? 1 : -1))[0];
     return {
       text: `누적 상벌점은 ${total > 0 ? `+${total}` : total}점이에요. 가장 최근 내역: ${latest.date} ${latest.type} ${
         latest.score > 0 ? `+${latest.score}` : latest.score
-      }점 (${latest.reason})`,
+       }점 (${latest.reason}). 순상점 10점 이상이면 인성/봉사의 item-405에 5점이 자동 반영되며, 원점수는 총점에 직접 더하지 않아요. 현재 자동 반영 대상: ${total >= 10 ? "예" : "아니오"}.`,
       suggestions: ["내 총점 알려줘"],
     };
   }
@@ -116,7 +118,7 @@ export function answerStudentQuestion(rawInput: string, ctx: ChatbotContext): Bo
   // 제출 방법
   if (includesAny(text, ["제출", "증빙", "어떻게 올려", "파일 첨부", "링크 첨부"])) {
     return {
-      text: "왼쪽 메뉴의 '증빙자료 제출'에서 인증 영역과 평가 항목을 선택하고, 활동일과 설명을 적은 뒤 파일 또는 링크 중 하나 이상을 첨부하면 돼요. 설명을 입력하면 AI가 어울리는 영역을 자동으로 추천해 줘요.",
+      text: "왼쪽 메뉴의 '증빙자료 제출'에서 인증 영역과 평가 항목을 선택하고 활동일과 설명을 적어 주세요. 증빙 필수 항목은 파일 또는 링크를 첨부하고, 선택 항목은 안내를 확인해 주세요. 순상점 항목(item-405)은 시스템 자동 계산 대상입니다. 설명을 입력하면 키워드 기반으로 어울리는 영역을 추천해 줘요.",
       suggestions: ["등급 기준이 뭐야?", "인증 상태가 무슨 뜻이야?"],
     };
   }
@@ -124,7 +126,7 @@ export function answerStudentQuestion(rawInput: string, ctx: ChatbotContext): Bo
   // 등급 기준
   if (includesAny(text, ["등급 기준", "s등급", "a등급", "b등급", "등급은 어떻게"])) {
     return {
-      text: "영역별 점수 비율에 따라 등급이 자동 계산돼요.\nS: 최대점의 90% 이상\nA: 80% 이상\nB: 70% 이상\n미달성: 70% 미만",
+      text: `${PROVISIONAL_GRADING_NOTICE}\n공식 배점은 전공역량 25, 외국어역량 20, 자격취득 20, 인성/봉사 20, 창체/독서 15로 총 100점입니다. 33개 항목이 있으며 1~3학년에 동일하게 적용합니다.`,
       suggestions: ["내 총점 알려줘"],
     };
   }
@@ -132,7 +134,7 @@ export function answerStudentQuestion(rawInput: string, ctx: ChatbotContext): Bo
   // 인증 상태 의미
   if (includesAny(text, ["인증 상태", "인증 가능", "인증이 뭐야", "검토중이 뭐야", "보완 필요가 뭐야"])) {
     return {
-      text: "인증 상태는 다음과 같은 의미예요.\n· 인증 가능: 모든 필수 영역이 기준을 충족\n· 보완 필요: 특정 영역 점수가 부족\n· 검토중: 제출 자료가 아직 검토 중이라 최종 판정이 어려움\n· 미달성: 하나 이상의 영역이 기준에 미달",
+      text: `${PROVISIONAL_GRADING_NOTICE}\n현재 표시되는 인증 가능/보완 필요/검토중/미달성은 데모 참고 상태이며 공식 인증 판정이 아닙니다.`,
       suggestions: ["내 총점 알려줘"],
     };
   }

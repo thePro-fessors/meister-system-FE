@@ -1,16 +1,48 @@
-import { User } from "./types";
+import type { Submission, User } from "./types";
 
-/** 교사의 담당 학급 문자열("1학년 2반")과 학생의 학년/반이 일치하는지 확인한다. */
+function matchesClassroom(classroom: string, student: User): boolean {
+  if (!student.grade || !student.classNo) return false;
+  return classroom === `${student.grade}-${student.classNo}` ||
+    classroom === `${student.grade}학년 ${student.classNo}반`;
+}
+
+// These demo checks do not replace server-side, academic-year-aware authorization.
 export function isInTeacherScope(teacher: User, student: User): boolean {
   if (teacher.role === "admin") return student.role === "student";
   if (teacher.role !== "teacher" || student.role !== "student") return false;
-  if (!teacher.homeroom) return true; // 담임이 아니면 전체 조회 권한을 가진 것으로 간주(간소화)
-  return teacher.homeroom === `${student.grade}학년 ${student.classNo}반` ||
-    teacher.homeroom === `${student.grade}-${student.classNo}`;
+  const scope = teacher.teacherScope;
+  if (!scope) {
+    return !!teacher.homeroom &&
+      (!teacher.teacherDuty || teacher.teacherDuty === "homeroom" || teacher.teacherDuty === "assistant_homeroom") &&
+      matchesClassroom(teacher.homeroom, student);
+  }
+
+  // Explicit constraints intersect; school-wide access never overrides a restriction.
+  if (scope.grade !== undefined && scope.grade !== student.grade) return false;
+  if (scope.classrooms !== undefined && !scope.classrooms.some((room) => matchesClassroom(room, student))) return false;
+  if (scope.studentIds !== undefined && (student.studentId === undefined || !scope.studentIds.includes(student.studentId))) return false;
+  if (scope.areas !== undefined && scope.areas.length === 0) return false;
+  if (scope.itemIds !== undefined && scope.itemIds.length === 0) return false;
+  return scope.schoolWide === true ||
+    (scope.grade !== undefined && Number.isInteger(scope.grade) && scope.grade > 0) ||
+    !!scope.classrooms?.length || !!scope.studentIds?.length ||
+    !!scope.areas?.length || !!scope.itemIds?.length;
 }
 
-// Demo mutations fail closed until explicit server reviewer assignments exist.
+// An area/item assignment is not permission to mutate every resource of a student.
 export function canManageStudent(teacher: User, student: User): boolean {
-  return (teacher.role === "admin" || (teacher.role === "teacher" && !!teacher.homeroom))
-    && isInTeacherScope(teacher, student);
+  if (!isInTeacherScope(teacher, student)) return false;
+  if (teacher.role === "admin") return true;
+  const scope = teacher.teacherScope;
+  return scope?.areas === undefined && scope?.itemIds === undefined;
+}
+
+export function canReviewSubmission(teacher: User, student: User, submission: Submission, adjust = false): boolean {
+  if (!isInTeacherScope(teacher, student) || submission.studentId !== student.id) return false;
+  if (teacher.role === "admin") return true;
+  const scope = teacher.teacherScope;
+  if (scope?.areas && !scope.areas.includes(submission.area)) return false;
+  if (scope?.itemIds && !scope.itemIds.includes(submission.itemId)) return false;
+  if (adjust && teacher.teacherDuty === "subject_teacher") return false;
+  return true;
 }

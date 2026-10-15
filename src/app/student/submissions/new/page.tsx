@@ -1,6 +1,121 @@
-import SubmitPage from "../../submit/page";
-import { AiServicePanel } from "@/components/AiServicePanel";
+"use client";
+
+import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
+import { CheckCircle2, Sparkles } from "lucide-react";
+import { useAuth } from "@/context/AuthContext";
+import { useData } from "@/context/DataContext";
+import { PageHeader } from "@/components/AppShell";
+import { AREA_NAMES, AreaName, EvalItem } from "@/lib/types";
+import { classifySubmission } from "@/lib/ai";
+
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
+const fieldClass = "w-full rounded-md border border-line bg-white px-3 py-2.5 text-sm outline-none focus:border-brass focus:ring-1 focus:ring-brass";
 
 export default function NewSubmissionPage() {
-  return <><AiServicePanel title="AI 항목 추천" endpoint="/api/ai/classify-submission" description="활동명과 설명을 바탕으로 적합한 영역과 항목을 추천합니다. 아래 기존 추천은 서버 AI가 아닌 로컬 키워드 데모입니다." action="서버 AI 추천" /><SubmitPage /></>;
+  const { user } = useAuth();
+  const { criteria, addSubmission } = useData();
+  const year = criteria.find((c) => c.active);
+  const grade = year?.gradeCriteria.find((g) => g.grade === user?.grade);
+  const areaItems = useMemo(() => Object.fromEntries((grade?.areas ?? []).map((a) =>
+    [a.area, a.items.filter((i) => i.active && !i.autoCalculated)])) as Record<AreaName, EvalItem[]>, [grade]);
+  const [area, setArea] = useState<AreaName>(AREA_NAMES[0]);
+  const [itemId, setItemId] = useState("");
+  const [detail, setDetail] = useState("");
+  const [description, setDescription] = useState("");
+  const [activityDate, setActivityDate] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [link, setLink] = useState("");
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const saving = useRef(false);
+  const [recommendation, setRecommendation] = useState({ detail: "", description: "" });
+  useEffect(() => {
+    const timer = setTimeout(() => setRecommendation({ detail, description }), 600);
+    return () => clearTimeout(timer);
+  }, [detail, description]);
+  const suggestions = useMemo(() => classifySubmission(recommendation.detail, recommendation.description, areaItems)
+    .filter((s) => areaItems[s.area]?.some((i) => i.name === s.itemGuess)), [recommendation, areaItems]);
+  const items = areaItems[area] ?? [];
+  const item = items.find((i) => i.id === itemId);
+  const ready = user?.role === "student" && !!year && !!grade;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (saving.current) return;
+    setError("");
+    if (!ready || !user || !year) { setError("활성 학년도 또는 학생 평가 기준이 없습니다. 관리자에게 문의해 주세요."); return; }
+    if (!item) { setError("평가 항목을 선택해 주세요."); return; }
+    if (!detail.trim() || !description.trim() || !activityDate || !Number.isFinite(Date.parse(activityDate))) {
+      setError("활동일, 활동상세와 설명을 입력해 주세요."); return;
+    }
+    if (file && file.size > MAX_FILE_SIZE) { setError("파일은 50MB 이하여야 합니다."); return; }
+    if (item.requiresEvidence && !file && !link.trim()) { setError("이 항목은 파일 또는 링크 증빙이 필수입니다."); return; }
+    if (link.trim()) {
+      try {
+        if (!["http:", "https:"].includes(new URL(link.trim()).protocol)) throw new Error();
+      } catch { setError("http:// 또는 https://로 시작하는 올바른 링크를 입력해 주세요."); return; }
+    }
+    saving.current = true;
+    setBusy(true);
+    try {
+      await addSubmission({ id: `sub-${crypto.randomUUID()}`, studentId: user.id, year: year.year,
+        area, itemId: item.id, itemName: item.name, detail: detail.trim(), description: description.trim(),
+        activityDate, fileName: file?.name, link: link.trim() || undefined,
+        status: "제출완료", submittedAt: new Date().toISOString().slice(0, 10) });
+      setDone(true);
+    } catch { setError("제출하지 못했습니다. 입력 내용을 확인하고 다시 시도해 주세요."); }
+    finally { saving.current = false; setBusy(false); }
+  }
+
+  if (done) return <div className="flex flex-col items-center rounded-lg border border-line bg-paper-raised px-8 py-16 text-center">
+    <CheckCircle2 size={36} className="mb-4 text-certified" />
+    <h2 className="font-display text-xl font-semibold">증빙자료가 제출되었습니다</h2>
+    <p className="mt-2 text-sm text-ink-soft">로컬 데모에 제출완료 상태로 등록했습니다. 파일 내용은 저장되지 않습니다.</p>
+    <Link href="/student/submissions" className="mt-6 rounded-md bg-navy px-4 py-2 text-sm text-white">제출 내역 보기</Link>
+  </div>;
+
+  return <div>
+    <PageHeader title="증빙자료 제출" description="인정받고 싶은 활동의 증빙자료를 제출하세요. 로컬 키워드 추천으로 평가 항목을 선택할 수 있습니다." />
+    {!ready && <p role="alert" className="mb-4 rounded-md bg-alert-soft p-3 text-sm text-alert">활성 학년도 또는 학생 평가 기준이 없습니다. 관리자에게 문의해 주세요.</p>}
+    <form onSubmit={submit} className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <fieldset disabled={!ready || busy} className="min-w-0 space-y-5 rounded-lg border border-line bg-paper-raised p-6 lg:col-span-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label className="text-sm font-medium">인증 영역<select className={fieldClass} value={area} onChange={(e) => { setArea(e.target.value as AreaName); setItemId(""); }}>
+            {(grade?.areas ?? []).map((a) => <option key={a.area}>{a.area}</option>)}
+          </select></label>
+          <label className="text-sm font-medium">평가 항목<select required className={fieldClass} value={itemId} onChange={(e) => setItemId(e.target.value)}>
+            <option value="">선택하세요</option>{items.map((i) => <option key={i.id} value={i.id}>{i.name} (최대 {i.maxScore}점)</option>)}
+          </select></label>
+        </div>
+        <label className="block text-sm font-medium">세부 항목 정보<input required className={fieldClass} value={detail} onChange={(e) => setDetail(e.target.value)} placeholder="예: 전공 프로젝트, 자격증, 봉사활동" /></label>
+        <label className="block text-sm font-medium">활동일<input required type="date" className={fieldClass} value={activityDate} onChange={(e) => setActivityDate(e.target.value)} /></label>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label className="text-sm font-medium">파일 첨부 (최대 50MB)<input type="file" className={fieldClass} onChange={(e) => {
+            const selected = e.target.files?.[0] ?? null;
+            if (selected && selected.size > MAX_FILE_SIZE) { e.target.value = ""; setFile(null); setError("50MB를 초과한 파일은 첨부할 수 없습니다."); return; }
+            setFile(selected); setError("");
+          }} /></label>
+          <label className="text-sm font-medium">링크 첨부<input className={fieldClass} value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://github.com/..." /></label>
+        </div>
+        <p className="text-xs text-ink-soft">{item?.requiresEvidence ? "파일 또는 링크 필수." : "증빙은 선택 사항입니다."} 데모에서는 파일명만 저장하며 실제 업로드나 원본 다운로드는 제공하지 않습니다.</p>
+        <label className="block text-sm font-medium">설명<textarea required rows={4} className={fieldClass} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
+        {error && <p role="alert" className="rounded-md bg-alert-soft p-3 text-sm text-alert">{error}</p>}
+        <button disabled={busy || !ready} type="submit" className="rounded-md bg-navy px-6 py-2.5 text-sm font-medium text-white disabled:opacity-50">{busy ? "등록 중..." : "증빙자료 제출"}</button>
+      </fieldset>
+      <aside className="space-y-4">
+        <div className="rounded-lg border border-brass/40 bg-brass-soft/40 p-5">
+          <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold"><Sparkles size={17} /> AI 항목 추천 · 로컬 데모</h2>
+          <p className="mb-3 text-sm text-ink-soft">입력 후 600ms 대기하여 로컬 키워드로 추천합니다. 서버 AI 호출이 아니며 자동 승인하지 않습니다.</p>
+          {suggestions.map((s) => <button key={`${s.area}-${s.itemGuess}`} type="button" disabled={busy || !ready} onClick={() => {
+            setArea(s.area); setItemId(areaItems[s.area]?.find((i) => i.name === s.itemGuess)?.id ?? "");
+          }} className="mb-2 block w-full rounded-md border border-brass/50 bg-white p-3 text-left text-sm">
+            {s.area} · {s.itemGuess}<span className="mt-1 block text-xs text-ink-soft">일치 키워드: {s.matchedKeywords.join(", ")}</span>
+          </button>)}
+        </div>
+        <div className="rounded-lg border border-line bg-paper-raised p-5 text-xs text-ink-soft">자동연동 항목은 직접 제출할 수 없습니다. 반려 또는 재제출요청 자료만 보완할 수 있으며, 제출완료 상태에서만 삭제할 수 있습니다.</div>
+      </aside>
+    </form>
+  </div>;
 }

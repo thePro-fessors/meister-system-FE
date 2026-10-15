@@ -4,7 +4,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState, useSync
 import { DemoUser, PointRecord, Submission, User, YearCriteria } from "@/lib/types";
 import { AuthError, createDemoAuthService, publicUser, type AuthService } from "@/lib/auth-service";
 import { SEED_CRITERIA, SEED_POINTS, SEED_SUBMISSIONS, SEED_USERS } from "@/lib/seed";
-import { softDeletePoint } from "@/lib/point-actions";
+import { canModifyPoint, softDeletePoint, validPointMagnitude } from "@/lib/point-actions";
 
 interface DataShape {
   users: DemoUser[];
@@ -13,7 +13,8 @@ interface DataShape {
   points: PointRecord[];
 }
 
-const STORAGE_KEY = "meister-app-data-v1";
+// Keep legacy data intact; the new criteria use different item IDs and scores.
+const STORAGE_KEY = "meister-app-data-spec-2026-v2";
 
 function loadInitial(): DataShape {
   if (typeof window === "undefined") {
@@ -186,7 +187,7 @@ function HydratedDataProvider({ children }: { children: React.ReactNode }) {
       addSubmission: (s) => setData((d) => ({ ...d, submissions: [s, ...d.submissions] })),
       deleteSubmission: (id, studentId) => setData((d) => ({
         ...d,
-        submissions: d.submissions.filter((s) => !(s.id === id && s.studentId === studentId && s.status !== "인정완료")),
+        submissions: d.submissions.filter((s) => !(s.id === id && s.studentId === studentId && s.status === "제출완료")),
       })),
       updateSubmission: (id, patch) =>
         setData((d) => ({
@@ -194,19 +195,25 @@ function HydratedDataProvider({ children }: { children: React.ReactNode }) {
           submissions: d.submissions.map((s) => (s.id === id ? { ...s, ...patch } : s)),
         })),
       addPoint: (p) => setData((d) => ({ ...d, points: [p, ...d.points] })),
-      updatePoint: (id, patch, editorId, reason) =>
+      updatePoint: (id, patch, editorId, reason) => {
+        const actor = data.users.find((u) => u.id === editorId);
+        const point = data.points.find((p) => p.id === id);
+        const student = data.users.find((u) => u.id === point?.studentId);
+        if (!actor || !point || !student || !canModifyPoint(actor, point, student) || !reason.trim()) throw new Error("수정 권한과 사유를 확인해 주세요.");
+        if (patch.score !== undefined && (!validPointMagnitude(Math.abs(patch.score)) || (point.type === "상점" ? patch.score <= 0 : patch.score >= 0))) throw new Error("점수는 1~5점이어야 합니다.");
         setData((d) => ({
           ...d,
           points: d.points.map((p) =>
             p.id === id
               ? {
                   ...p,
-                  ...patch,
+                   score: patch.score ?? p.score,
                   editHistory: [...(p.editHistory ?? []), { editorId, reason, at: new Date().toISOString() }],
                 }
               : p
           ),
-        })),
+        }));
+      },
       updateCriteria: (criteria) => setData((d) => ({ ...d, criteria })),
       resetToSeed: () =>
         setData({

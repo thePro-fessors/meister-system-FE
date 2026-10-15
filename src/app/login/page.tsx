@@ -7,9 +7,12 @@ import { useAuth } from "@/context/AuthContext";
 import { loginDestination } from "@/lib/navigation";
 
 const DEMO_ACCOUNTS = [
-  { id: "student1", label: "학생 · 김민준", role: "학생" },
-  { id: "teacher1", label: "교사 · 박정훈", role: "교사" },
-  { id: "admin1", label: "관리자", role: "관리자" },
+  { id: "student1", label: "학생 · 김민준", password: "password123!" },
+  { id: "teacher1", label: "1-1 담임교사", password: "password123!" },
+  { id: "teacher2", label: "1-2 담임교사", password: "password123!" },
+  { id: "head1", label: "1학년 부장교사", password: "password123!" },
+  { id: "vp", label: "교감", password: "password123!" },
+  { id: "admin", label: "관리자", password: "admin1234!" },
 ];
 
 export default function LoginPage() {
@@ -60,7 +63,7 @@ export default function LoginPage() {
             required
             value={id}
             onChange={(e) => setId(e.target.value)}
-            placeholder="student1 / teacher1 / admin1"
+            placeholder="student1 / teacher1 / admin"
             className="mb-4 w-full rounded-md border border-line bg-white px-3 py-2.5 text-sm outline-none focus:border-brass focus:ring-1 focus:ring-brass"
           />
 
@@ -75,7 +78,7 @@ export default function LoginPage() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            placeholder="1234"
+            placeholder="비밀번호를 입력하세요"
             className="mb-2 w-full rounded-md border border-line bg-white px-3 py-2.5 text-sm outline-none focus:border-brass focus:ring-1 focus:ring-brass"
           />
 
@@ -99,7 +102,7 @@ export default function LoginPage() {
         </p>
 
         <div className="mt-9 border-t border-line pt-6">
-          <p className="mb-2.5 text-xs font-medium text-ink-soft">체험용 계정 (비밀번호 1234)</p>
+          <p className="mb-2.5 text-xs font-medium text-ink-soft">체험용 계정 · 선택하면 아이디와 비밀번호가 입력됩니다.</p>
           <div className="grid grid-cols-1 gap-1.5">
             {DEMO_ACCOUNTS.map((acc) => (
               <button
@@ -108,7 +111,8 @@ export default function LoginPage() {
                 type="button"
                 onClick={() => {
                   setId(acc.id);
-                  setPassword("1234");
+                  setPassword(acc.password);
+                  setError(null);
                 }}
                 className="flex items-center justify-between rounded-md border border-line px-3 py-2 text-left text-sm transition-colors hover:border-brass hover:bg-brass-soft/40"
               >
