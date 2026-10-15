@@ -7,6 +7,7 @@ import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { StatusPill } from "@/components/StatusPill";
 import { Submission, SubmissionStatus } from "@/lib/types";
+import { downloadSubmissionFile } from "@/lib/api-client";
 
 const STATUSES: SubmissionStatus[] = ["제출완료", "검토중", "인정완료", "반려", "재제출요청"];
 
@@ -76,20 +77,16 @@ export default function StudentSubmissionsPage() {
     saving.current = true;
     setBusy(true);
     try {
-    await updateSubmission(id, {
-      detail: draft.detail.trim(),
-      description: draft.description.trim(),
-      fileName: replacement?.name ?? (draft.fileName || undefined),
-      link: draft.link.trim() || undefined,
-      status: "제출완료",
-      teacherComment: undefined,
-      score: undefined,
-      reviewerId: undefined,
-      reviewedAt: undefined,
-      submittedAt: new Date().toISOString().slice(0, 10),
-    });
-    setEditing(null);
-    setNotice("보완 자료를 제출완료 상태로 등록했습니다 (로컬 데모).");
+      await updateSubmission(id, {
+        detail: draft.detail.trim(),
+        description: draft.description.trim(),
+        fileName: replacement?.name ?? (draft.fileName || undefined),
+        link: draft.link.trim() || undefined,
+        status: "제출완료",
+        file: replacement || undefined,
+      } as any);
+      setEditing(null);
+      setNotice("보완 자료를 성공적으로 재제출했습니다.");
     } catch { setError("재제출하지 못했습니다. 다시 시도해 주세요."); }
     finally { saving.current = false; setBusy(false); }
   }
@@ -104,8 +101,8 @@ export default function StudentSubmissionsPage() {
     try {
       await deleteSubmission(id, user.id);
       if (editing === id) setEditing(null);
-      setNotice("제출 자료를 삭제했습니다 (로컬 데모).");
-    } catch { setError("삭제하지 못했습니다. 이미 심사 중인 건인지 목록을 확인해 주세요."); }
+      setNotice("제출 자료를 삭제했습니다.");
+    } catch { setError("삭제하지 못했습니다. 이미 심사가 진행된 건인지 목록을 확인해 주세요."); }
     finally { saving.current = false; setBusy(false); }
   }
 
@@ -153,8 +150,17 @@ export default function StudentSubmissionsPage() {
 
             <div className="mt-3 flex flex-wrap gap-3 text-xs text-ink-soft">
               {s.fileName && (
-                <button type="button" onClick={() => setNotice("로컬 데모에는 파일명만 저장되어 원본 다운로드와 1회용 티켓 발급을 제공하지 않습니다.")} className="inline-flex items-center gap-1 text-left">
-                  <FileText size={13} strokeWidth={1.75} /> {s.fileName} · 다운로드 불가 (데모)
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setNotice("다운로드 티켓을 발급받는 중입니다...");
+                    const res = await downloadSubmissionFile(s.id, s.fileUrl);
+                    if (!res.ok) setNotice(res.message || "파일 다운로드에 실패했습니다.");
+                    else setNotice("파일 다운로드가 시작되었습니다.");
+                  }}
+                  className="inline-flex items-center gap-1 text-left text-brass hover:underline cursor-pointer"
+                >
+                  <FileText size={13} strokeWidth={1.75} /> {s.fileName} · 증빙자료 다운로드
                 </button>
               )}
               {s.link && (
@@ -200,7 +206,7 @@ export default function StudentSubmissionsPage() {
                   rows={3}
                   className="w-full rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-brass focus:ring-1 focus:ring-brass"
                 />
-                <p className="text-xs text-ink-soft">기존 파일: {draft.fileName || "없음"}. 교체하지 않으면 기존 파일명을 유지합니다. 최대 50MB, 파일명만 저장되며 실제 업로드하지 않습니다.</p>
+                <p className="text-xs text-ink-soft">기존 파일: {draft.fileName || "없음"}. 교체하지 않으면 기존 파일이 유지됩니다. (최대 50MB)</p>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <input
                     type="file"

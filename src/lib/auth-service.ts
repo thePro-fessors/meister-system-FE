@@ -1,4 +1,6 @@
-import type { DemoUser, User } from "./types";
+import type { User } from "./types";
+import { apiClient, ApiError, apiErrorMessage } from "./api-client";
+import { parseLoginResponse, parseMeResponse } from "./auth-contract";
 
 export interface LoginInput {
   username: string;
@@ -18,11 +20,18 @@ export class AuthError extends Error {
   }
 }
 
-export function publicUser(user: DemoUser): User {
+export function publicUser(user: any): User {
   return {
-    id: user.id, name: user.name, role: user.role,
-    uuid: user.uuid, studentId: user.studentId, teacherId: user.teacherId,
-    grade: user.grade, classNo: user.classNo, number: user.number, homeroom: user.homeroom,
+    id: String(user.id),
+    name: user.name,
+    role: user.role,
+    uuid: user.uuid,
+    studentId: user.studentId,
+    teacherId: user.teacherId,
+    grade: user.grade,
+    classNo: user.classNo,
+    number: user.number,
+    homeroom: user.homeroom,
     teacherDuty: user.teacherDuty,
     teacherScope: user.teacherScope ? {
       ...user.teacherScope,
@@ -31,43 +40,62 @@ export function publicUser(user: DemoUser): User {
       itemIds: user.teacherScope.itemIds?.slice(),
       studentIds: user.teacherScope.studentIds?.slice(),
     } : undefined,
+    email: user.email,
   };
 }
 
-const SESSION_KEY = "meister-app-session-v1";
+export const TOKEN_STORAGE_KEY = "meister_access_token";
 
-// Storage is injected so importing this module never accesses browser APIs.
-export function createDemoAuthService(
-  getUsers: () => readonly DemoUser[],
-  getStorage: () => Pick<Storage, "getItem" | "setItem" | "removeItem">,
-): AuthService {
+export function createBackendAuthService(client = apiClient): AuthService {
   return {
     async restore() {
+      if (typeof window === "undefined") return null;
+      const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+      if (!token || !token.trim()) return null;
       try {
-        const raw = getStorage().getItem(SESSION_KEY);
-        if (!raw) return null;
-        const id: unknown = JSON.parse(raw);
-        const found = getUsers().find((user) => user.id === id);
-        return found ? publicUser(found) : null;
+        const raw = await client.request<unknown>("/api/auth/me", {
+          method: "GET",
+          authenticated: true,
+        });
+        const envelope = { status_code: 200, success: true, data: raw };
+        return parseMeResponse(envelope);
       } catch {
+        localStorage.removeItem(TOKEN_STORAGE_KEY);
         return null;
       }
     },
     async login({ username, password }) {
-      const found = getUsers().find((user) => user.id === username && user.password === password);
-      if (!found) throw new AuthError("INVALID_CREDENTIAL", "아이디 또는 비밀번호가 올바르지 않습니다.");
       try {
-        getStorage().setItem(SESSION_KEY, JSON.stringify(found.id));
-      } catch {
-        throw new AuthError("STORAGE_UNAVAILABLE", "브라우저의 세션 저장소를 사용할 수 없습니다. 저장소 설정을 확인해 주세요.");
+        const raw = await client.request<unknown>("/api/auth/login", {
+          method: "POST",
+          body: { username, password },
+          authenticated: false,
+        });
+        const envelope = { status_code: 200, success: true, data: raw };
+        const parsed = parseLoginResponse(envelope);
+        if (typeof window !== "undefined") {
+          localStorage.setItem(TOKEN_STORAGE_KEY, parsed.token);
+        }
+        return parsed.user;
+      } catch (err) {
+        if (err instanceof ApiError) {
+          throw new AuthError(err.code, err.message);
+        }
+        throw new AuthError("LOGIN_FAILED", apiErrorMessage(err));
       }
-      return publicUser(found);
     },
     async logout() {
       try {
-        getStorage().removeItem(SESSION_KEY);
+        await client.request("/api/auth/logout", {
+          method: "POST",
+          authenticated: true,
+        });
       } catch {
-        throw new AuthError("STORAGE_UNAVAILABLE", "세션을 삭제하지 못했습니다. 브라우저 저장소 설정을 확인한 뒤 다시 시도해 주세요.");
+        // Proceed with local logout regardless of network error
+      } finally {
+        if (typeof window !== "undefined") {
+          localStorage.removeItem(TOKEN_STORAGE_KEY);
+        }
       }
     },
   };

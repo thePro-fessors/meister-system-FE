@@ -24,8 +24,9 @@ export default function AuditPage() {
     if (!availability.available) { reset(); return; }
     void run(async (signal) => {
       const result = await apiClient.request<AuditLogs>("/api/admin/audit-logs", { query: { ...filters, page, limit }, signal });
-      if (!result || !Array.isArray(result.logs) || !Number.isInteger(result.total) || result.total < 0) throw new ApiError("감사 로그 응답 형식이 올바르지 않습니다.", 0, "INVALID_RESPONSE");
-      return result;
+      const total = result?.pagination?.totalCount ?? result?.total;
+      if (!result || !Array.isArray(result.logs) || typeof total !== "number" || total < 0) throw new ApiError("감사 로그 응답 형식이 올바르지 않습니다.", 0, "INVALID_RESPONSE");
+      return { ...result, total, logs: result.logs };
     }, true);
     return reset;
   }, [availability.available, filters, page, limit, revision, run, reset]);
@@ -53,19 +54,19 @@ export default function AuditPage() {
       {validation && <p role="alert" className="text-sm text-alert">{validation}</p>}
       <TaskStatus {...logs} />
       {logs.data && <>
-        <p className="text-sm text-ink-soft">전체 {logs.data.total}건 · {page}페이지</p>
+        <p className="text-sm text-ink-soft">전체 {logs.data.total ?? logs.data.pagination?.totalCount}건 · {page}페이지</p>
         {logs.data.logs.length === 0 ? <p className="text-sm">조회된 감사 로그가 없습니다.</p> : <ol className="divide-y divide-line">
-          {[...logs.data.logs].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at)).map((log) => <li key={log.log_id} className="space-y-2 py-4">
-            <div className="flex flex-wrap justify-between gap-2 text-sm"><strong>{log.action} · {log.user_id}</strong><time dateTime={log.created_at}>{log.created_at}</time></div>
-            <p className="text-xs text-ink-soft">로그 #{log.log_id} · IP {log.ip_address || "미기록"}</p>
-            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded bg-paper p-3 text-xs">{typeof log.details === "string" ? log.details : JSON.stringify(log.details, null, 2)}</pre>
+          {[...logs.data.logs].sort((a, b) => Date.parse((b.created_at || b.createdAt) || "") - Date.parse((a.created_at || a.createdAt) || "")).map((log) => <li key={log.log_id || log.logId || log.id} className="space-y-2 py-4">
+            <div className="flex flex-wrap justify-between gap-2 text-sm"><strong>{log.action || log.actionType} · {log.user_id || (log as any).modifier?.name || (log as any).modifier?.uuid}</strong><time dateTime={log.created_at || log.createdAt}>{log.created_at || log.createdAt}</time></div>
+            <p className="text-xs text-ink-soft">로그 #{log.log_id || log.logId || log.id} · IP {log.ip_address || log.ipAddress || "미기록"}</p>
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all rounded bg-paper p-3 text-xs">{typeof (log.details ?? (log as any).changes ?? (log as any).reason) === "string" ? (log.details ?? (log as any).changes ?? (log as any).reason) : JSON.stringify(log.details ?? (log as any).changes ?? (log as any).reason, null, 2)}</pre>
           </li>)}
         </ol>}
       </>}
       <div className="flex items-center gap-3">
         <button className={specButton} disabled={!availability.available || logs.loading || page === 1} onClick={() => setPage((value) => value - 1)}>이전</button>
         <span className="text-sm">{page}페이지</span>
-        <button className={specButton} disabled={!availability.available || logs.loading || !logs.data || page * limit >= logs.data.total} onClick={() => setPage((value) => value + 1)}>다음</button>
+        <button className={specButton} disabled={!availability.available || logs.loading || !logs.data || page * limit >= (logs.data.total ?? logs.data.pagination?.totalCount ?? 0)} onClick={() => setPage((value) => value + 1)}>다음</button>
       </div>
     </SpecAdminPanel>
     <SpecAdminPanel>
@@ -86,10 +87,16 @@ export default function AuditPage() {
           if (!window.confirm(`${year || "서버 기본 학년도"} 학생들의 점수와 인증 판정을 전체 재계산합니다. 계속하시겠습니까?`)) return;
           void recalculate.run(async (signal) => {
             const result = await apiClient.request<RecalculationReport>("/api/admin/recalculate", { method: "POST", body, signal });
-            if (!result || ![result.processed_students, result.recalculated_scores, result.duration_ms].every((value) => typeof value === "number" && Number.isFinite(value))) {
+            const processed = result?.totalProcessedStudents ?? result?.processed_students;
+            if (!result || typeof processed !== "number" || !Number.isFinite(processed)) {
               throw new ApiError("재계산 결과 형식이 올바르지 않습니다. 서버 처리 상태를 확인하세요.", 0, "INVALID_RESPONSE");
             }
-            return result;
+            return {
+              ...result,
+              processed_students: processed,
+              recalculated_scores: result.recalculated_scores ?? (result as any).anomaliesFixedCount ?? processed,
+              duration_ms: result.duration_ms ?? 0,
+            };
           });
         }}>전체 데이터 재계산</button>
       </div>
@@ -102,7 +109,7 @@ export default function AuditPage() {
           <h4 className="font-semibold">{item.student_name} · 제출 #{item.submission_id} · 위험 점수 {item.risk_score}{item.risk_score >= 80 && " · 고위험"}</h4><p>{item.reason}</p>
         </article>)}
       </div>}
-      {recalculate.data && <p role="status" className="rounded-md bg-certified-soft p-3 text-sm text-certified">재계산 완료: 학생 {recalculate.data.processed_students}명, 점수 {recalculate.data.recalculated_scores}건, {recalculate.data.duration_ms}ms</p>}
+      {recalculate.data && <p role="status" className="rounded-md bg-certified-soft p-3 text-sm text-certified">재계산 완료: 학생 {recalculate.data.processed_students ?? recalculate.data.totalProcessedStudents}명{recalculate.data.recalculated_scores !== undefined ? `, 점수 ${recalculate.data.recalculated_scores}건` : ""}{recalculate.data.duration_ms ? `, ${recalculate.data.duration_ms}ms` : ""}</p>}
     </SpecAdminPanel>
   </>;
 }

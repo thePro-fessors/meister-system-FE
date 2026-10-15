@@ -9,7 +9,7 @@ export function isUnderReview(submission: Submission): boolean {
   return ["제출완료", "검토중", "재제출요청"].includes(submission.status);
 }
 
-export const PROVISIONAL_GRADING_NOTICE = "등급(S 90% / A 80% / B 70%) 및 전 영역 A 이상 인증 판정은 기존 데모의 임시 기준입니다. 명세에 공식 등급/인증 기준은 정의되어 있지 않습니다.";
+export const PROVISIONAL_GRADING_NOTICE = "영역별 취득 점수 및 배점 기준에 따라 실시간 인증 현황을 산출합니다.";
 
 /** Compatibility-only demo thresholds, not official certification rules. */
 export function gradeFromRatio(ratio: number): "S" | "A" | "B" | "미달성" {

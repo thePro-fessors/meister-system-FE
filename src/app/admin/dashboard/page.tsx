@@ -1,16 +1,73 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { Download } from "lucide-react";
 import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { StatusPill } from "@/components/StatusPill";
 import { computeAreaResults, computeCertStatus } from "@/lib/grading";
 import { CertStatus } from "@/lib/types";
+import { apiClient, apiErrorMessage } from "@/lib/api-client";
+
+interface AdminOverviewData {
+  year?: number;
+  totalStudents?: number;
+  statusCounts?: {
+    certified?: number;
+    reviewing?: number;
+    supplement?: number;
+    uncertified?: number;
+  };
+  submissionCounts?: {
+    total?: number;
+    pending?: number;
+    approved?: number;
+    rejected?: number;
+    resubmitRequested?: number;
+  };
+}
 
 export default function AdminDashboard() {
   const { users, submissions, points, criteria } = useData();
   const year = criteria.find((c) => c.active) ?? criteria[0];
   const students = users.filter((u) => u.role === "student");
+  const [overview, setOverview] = useState<AdminOverviewData | null>(null);
+  const [exporting, setExporting] = useState(false);
+
+  useEffect(() => {
+    let ignore = false;
+    async function load() {
+      try {
+        const res = await apiClient.request<AdminOverviewData>("/api/admin/overview", {
+          query: { year: year?.year },
+        });
+        if (!ignore && res) setOverview(res);
+      } catch {
+        // Fall back to local calculation
+      }
+    }
+    void load();
+    return () => { ignore = true; };
+  }, [year?.year]);
+
+  async function handleExport(format: "csv" | "xlsx" | "pdf") {
+    setExporting(true);
+    try {
+      const blob = await apiClient.exportStats(format, year?.year);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `meister_stats_${year?.year || 2026}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert("내보내기 실패: " + apiErrorMessage(e));
+    } finally {
+      setExporting(false);
+    }
+  }
 
   const rows = useMemo(
     () =>
@@ -26,32 +83,68 @@ export default function AdminDashboard() {
     [students, year, submissions, points]
   );
 
-  const statusCounts = rows.reduce<Record<string, number>>((acc, r) => {
+  const localStatusCounts = rows.reduce<Record<string, number>>((acc, r) => {
     acc[r.status] = (acc[r.status] ?? 0) + 1;
     return acc;
   }, {});
 
-  const pendingCount = submissions.filter((s) => s.status === "제출완료" || s.status === "검토중").length;
+  const totalStudentCount = overview?.totalStudents ?? students.length;
+  const pendingCount = overview?.submissionCounts?.pending ?? submissions.filter((s) => s.status === "제출완료" || s.status === "검토중").length;
 
   const STATUS_ORDER: CertStatus[] = ["인증 가능", "보완 필요", "검토중", "미달성"];
 
+  function getStatusValue(st: CertStatus): number {
+    if (overview?.statusCounts) {
+      if (st === "인증 가능") return overview.statusCounts.certified ?? 0;
+      if (st === "보완 필요") return overview.statusCounts.supplement ?? 0;
+      if (st === "검토중") return overview.statusCounts.reviewing ?? 0;
+      if (st === "미달성") return overview.statusCounts.uncertified ?? 0;
+    }
+    return localStatusCounts[st] ?? 0;
+  }
+
   return (
     <div>
-      <PageHeader
-        eyebrow={year ? `${year.year}학년도` : undefined}
-        title="전체 현황"
-        description="전체 학생의 인증 현황과 검토 대기 자료를 한눈에 확인합니다."
-      />
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <PageHeader
+          eyebrow={year ? `${year.year}학년도` : undefined}
+          title="전체 현황"
+          description="전체 학생의 인증 현황과 검토 대기 자료를 한눈에 확인합니다."
+        />
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => handleExport("csv")}
+            disabled={exporting}
+            className="inline-flex items-center gap-1 rounded-md border border-line bg-paper-raised px-3 py-1.5 text-xs font-medium text-ink hover:bg-paper disabled:opacity-50"
+          >
+            <Download size={13} /> CSV
+          </button>
+          <button
+            onClick={() => handleExport("xlsx")}
+            disabled={exporting}
+            className="inline-flex items-center gap-1 rounded-md border border-line bg-paper-raised px-3 py-1.5 text-xs font-medium text-ink hover:bg-paper disabled:opacity-50"
+          >
+            <Download size={13} /> Excel
+          </button>
+          <button
+            onClick={() => handleExport("pdf")}
+            disabled={exporting}
+            className="inline-flex items-center gap-1 rounded-md border border-line bg-paper-raised px-3 py-1.5 text-xs font-medium text-ink hover:bg-paper disabled:opacity-50"
+          >
+            <Download size={13} /> PDF
+          </button>
+        </div>
+      </div>
 
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         <div className="rounded-lg border border-line bg-paper-raised p-5">
           <p className="text-xs text-ink-soft">전체 학생 수</p>
-          <p className="mt-1.5 font-display text-3xl font-semibold text-ink">{students.length}</p>
+          <p className="mt-1.5 font-display text-3xl font-semibold text-ink">{totalStudentCount}</p>
         </div>
         {STATUS_ORDER.map((st) => (
           <div key={st} className="rounded-lg border border-line bg-paper-raised p-5">
             <p className="text-xs text-ink-soft">{st}</p>
-            <p className="mt-1.5 font-display text-3xl font-semibold text-navy">{statusCounts[st] ?? 0}</p>
+            <p className="mt-1.5 font-display text-3xl font-semibold text-navy">{getStatusValue(st)}</p>
           </div>
         ))}
       </div>

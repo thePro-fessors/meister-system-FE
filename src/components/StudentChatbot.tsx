@@ -6,6 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useData } from "@/context/DataContext";
 import { computeAreaResults, computeCertStatus } from "@/lib/grading";
 import { answerStudentQuestion, DEFAULT_SUGGESTIONS } from "@/lib/chatbot";
+import { apiClient } from "@/lib/api-client";
 
 interface Message {
   id: string;
@@ -20,7 +21,10 @@ export function StudentChatbot() {
   const [open, setOpen] = useState(false);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [conversationId, setConversationId] = useState<string | undefined>(undefined);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const idRef = useRef(0);
 
   const year = criteria.find((c) => c.active) ?? criteria[0];
 
@@ -55,23 +59,62 @@ export function StudentChatbot() {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, open]);
+  }, [messages, open, loading]);
 
-  function send(text: string) {
-    if (!text.trim() || !user || !year) return;
-    const userMsg: Message = { id: `u-${messages.length}`, role: "user", text };
-    const reply = answerStudentQuestion(text, {
-      student: user,
-      year: year.year,
-      results,
-      certStatus,
-      totalScore,
-      submissions: mySubmissions,
-      points: myPoints,
-    });
-    const botMsg: Message = { id: `b-${messages.length}`, role: "bot", text: reply.text, suggestions: reply.suggestions };
-    setMessages((m) => [...m, userMsg, botMsg]);
+  async function send(text: string) {
+    if (!text.trim() || !user || !year || loading) return;
+    idRef.current += 1;
+    const userMsg: Message = { id: `u-${idRef.current}`, role: "user", text };
+    setMessages((m) => [...m, userMsg]);
     setInput("");
+    setLoading(true);
+
+    try {
+      const res = await apiClient.request<{
+        reply?: string;
+        message?: string;
+        conversationId?: string;
+        suggestions?: string[];
+      }>("/api/ai/student/chat", {
+        method: "POST",
+        body: {
+          message: text,
+          conversationId,
+        },
+      });
+
+      if (res?.conversationId) setConversationId(res.conversationId);
+      const botReply = res?.reply || res?.message || "답변을 불러오지 못했습니다.";
+      idRef.current += 1;
+      const botMsg: Message = {
+        id: `b-${idRef.current}`,
+        role: "bot",
+        text: botReply,
+        suggestions: res?.suggestions && res.suggestions.length > 0 ? res.suggestions : DEFAULT_SUGGESTIONS,
+      };
+      setMessages((m) => [...m, botMsg]);
+    } catch {
+      // Fallback to local rule engine if offline or server AI fails
+      const fallbackReply = answerStudentQuestion(text, {
+        student: user,
+        year: year.year,
+        results,
+        certStatus,
+        totalScore,
+        submissions: mySubmissions,
+        points: myPoints,
+      });
+      idRef.current += 1;
+      const botMsg: Message = {
+        id: `b-${idRef.current}`,
+        role: "bot",
+        text: fallbackReply.text,
+        suggestions: fallbackReply.suggestions,
+      };
+      setMessages((m) => [...m, botMsg]);
+    } finally {
+      setLoading(false);
+    }
   }
 
   if (!user) return null;
@@ -112,6 +155,13 @@ export function StudentChatbot() {
                 )}
               </div>
             ))}
+            {loading && (
+              <div className="flex items-start">
+                <div className="max-w-[85%] rounded-lg bg-navy-soft px-3 py-2 text-xs text-ink-soft animate-pulse">
+                  AI가 분석하고 있습니다...
+                </div>
+              </div>
+            )}
           </div>
 
           <form

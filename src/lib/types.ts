@@ -16,6 +16,8 @@ export interface User {
   studentId?: number;
   teacherId?: number;
   name: string;
+  email?: string;
+  schoolEmail?: string;
   role: Role;
   grade?: number; // 학생
   classNo?: number; // 학생
@@ -65,6 +67,7 @@ export interface EvalItem {
 }
 
 export interface AreaCriteria {
+  areaId?: number;
   area: AreaName;
   maxScore: number;
   items: EvalItem[];
@@ -96,6 +99,8 @@ export interface Submission {
   detail: string; // 세부 항목 정보
   activityDate: string;
   fileName?: string;
+  filePath?: string;
+  fileUrl?: string;
   link?: string;
   description: string;
   status: SubmissionStatus;
@@ -128,11 +133,13 @@ export interface PointRecord {
 
 export type CertStatus = "인증 가능" | "미달성" | "검토중" | "보완 필요";
 
+export type GradeLevel = "S" | "A" | "B" | "미달성";
+
 export interface AreaResult {
   gradingPolicy?: "provisional";
   area: AreaName;
   score: number;
   maxScore: number;
-  grade: "S" | "A" | "B" | "미달성";
+  grade: GradeLevel;
   status: "충족" | "보완 필요";
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useMemo } from "react";
+import { use, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { useData } from "@/context/DataContext";
@@ -11,27 +11,72 @@ import { academicYear, computeAreaResults } from "@/lib/grading";
 import { useAuth } from "@/context/AuthContext";
 import { canManageStudent } from "@/lib/teacherScope";
 import { DeletePointButton } from "@/components/DeletePointButton";
+import { apiClient } from "@/lib/api-client";
+import { AreaName, GradeLevel } from "@/lib/types";
+
+interface ServerStudentDetail {
+  studentId?: number;
+  name?: string;
+  grade?: number;
+  classNo?: number;
+  number?: number;
+  pointTotal?: number;
+  pendingCount?: number;
+  areas?: Array<{
+    area: AreaName;
+    score: number;
+    maxScore: number;
+    grade: GradeLevel;
+    status: string;
+  }>;
+  submissions?: Array<any>;
+}
 
 export default function StudentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { user } = useAuth();
   const { users, submissions, points, criteria } = useData();
+  const [serverDetail, setServerDetail] = useState<ServerStudentDetail | null>(null);
 
-  const student = users.find((u) => u.id === id);
+  useEffect(() => {
+    let ignore = false;
+    async function load() {
+      try {
+        const res = await apiClient.request<ServerStudentDetail>(`/api/teacher/students/${id}`);
+        if (!ignore && res) setServerDetail(res);
+      } catch {
+        // Fall back to context calculation
+      }
+    }
+    void load();
+    return () => { ignore = true; };
+  }, [id]);
+
+  const student = users.find((u) => u.id === id || String(u.studentId) === id);
   const year = criteria.find((c) => c.active) ?? criteria[0];
 
-  const results = useMemo(
+  const localResults = useMemo(
     () => (student?.grade && year ? computeAreaResults(student.id, year.year, student.grade, year, submissions, points) : []),
     [student, year, submissions, points]
   );
 
-  const studentSubs = useMemo(
-    () =>
-      submissions
-        .filter((s) => s.studentId === id)
-        .sort((a, b) => (a.submittedAt < b.submittedAt ? 1 : -1)),
-    [submissions, id]
-  );
+  const results = serverDetail?.areas && serverDetail.areas.length > 0 ? serverDetail.areas : localResults;
+
+  const studentSubs = useMemo(() => {
+    if (serverDetail?.submissions && serverDetail.submissions.length > 0) {
+      return serverDetail.submissions.map((s) => ({
+        id: String(s.id ?? s.submission_id),
+        area: s.area || s.area_name,
+        itemName: s.itemName || s.item_name,
+        status: s.status,
+        score: s.grantedScore ?? s.granted_score ?? s.score,
+        submittedAt: s.submittedAt ? String(s.submittedAt).slice(0, 10) : (s.created_at ? String(s.created_at).slice(0, 10) : ""),
+      }));
+    }
+    return submissions
+      .filter((s) => s.studentId === id || (student && s.studentId === student.id))
+      .sort((a, b) => (a.submittedAt < b.submittedAt ? 1 : -1));
+  }, [submissions, id, student, serverDetail]);
 
     if (!student || !user || !canManageStudent(user, student)) {
     return <p role="alert">해당 학생을 조회할 권한이 없거나 학생을 찾을 수 없습니다.</p>;

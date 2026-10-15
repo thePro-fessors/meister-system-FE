@@ -20,7 +20,12 @@ function Profile() {
         : user.homeroom || "전교생 담당" }).map(([label, value]) => <div key={label}>
         <dt className="text-sm text-ink-soft">{label}</dt><dd className="mt-1 font-medium text-ink">{value}</dd>
       </div>)}
+      {user.email && (
+        <div>
+          <dt className="text-sm text-ink-soft">이메일</dt>
+          <dd className="mt-1 font-medium text-ink">{user.email}</dd>
+        </div>
+      )}
     </dl>
-    <p className="mt-5 rounded-lg border border-line p-4 text-sm text-ink-soft">현재 로컬 데모 모드입니다. 이메일 변경 및 OTP 인증은 백엔드 연동 후 사용할 수 있습니다. 로그아웃은 메뉴에서 진행할 수 있습니다.</p>
   </div>;
 }

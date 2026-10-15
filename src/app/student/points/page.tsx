@@ -13,7 +13,7 @@ export default function StudentPointsPage() {
   const mine = useMemo(
     () =>
       points
-        .filter((p) => p.studentId === user?.id)
+        .filter((p) => p.studentId === user?.id || (user?.studentId && p.studentId === String(user.studentId)))
         .sort((a, b) => (a.date < b.date ? 1 : -1)),
     [points, user]
   );

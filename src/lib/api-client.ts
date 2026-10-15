@@ -24,18 +24,26 @@ export function apiErrorMessage(value: unknown): string {
   if (value instanceof Error) return value.message;
   if (Array.isArray(value)) return value.map(apiErrorMessage).join("; ");
   if (record(value)) {
+    if (record(value.error) && typeof value.error.message === "string") {
+      const remaining = record(value.data) && typeof value.data.remainingAttempts === "number"
+        ? ` (남은 시도: ${value.data.remainingAttempts}회)`
+        : "";
+      return `${value.error.message}${remaining}`;
+    }
     for (const key of ["detail", "message", "msg", "reason"]) {
       if (value[key] !== undefined) return apiErrorMessage(value[key]);
     }
-    return JSON.stringify(value);
+    if (value.error !== undefined) return apiErrorMessage(value.error);
+    return "요청을 처리하지 못했습니다.";
   }
   return "요청을 처리하지 못했습니다.";
 }
 
 export function unwrapSrFormat<T>(value: unknown, status = 200): T {
   if (record(value) && value.success === false) {
-    throw new ApiError(apiErrorMessage(value.detail ?? value.message), status,
-      typeof value.error_code === "string" ? value.error_code : "API_ERROR", value);
+    const errorObj = record(value.error) ? value.error : {};
+    const errorCode = typeof errorObj.code === "string" ? errorObj.code : (typeof value.error_code === "string" ? value.error_code : "API_ERROR");
+    throw new ApiError(apiErrorMessage(value), status, errorCode, value);
   }
   if (record(value) && value.success === true && Object.hasOwn(value, "data")) return value.data as T;
   return value as T;
@@ -44,20 +52,26 @@ export function unwrapSrFormat<T>(value: unknown, status = 200): T {
 export function createApiClient(options: { baseUrl?: string; getToken?: TokenGetter } = {}) {
   function baseUrl() {
     const configured = (options.baseUrl ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "").trim();
-    if (!configured) throw new ApiError("서버 연동 대기: NEXT_PUBLIC_API_BASE_URL이 설정되지 않았습니다.", 0, "NOT_CONFIGURED");
-    let url: URL;
-    try { url = new URL(configured); } catch { throw new ApiError("API 주소는 절대 HTTP(S) URL이어야 합니다.", 0, "INVALID_BASE_URL"); }
-    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
-      throw new ApiError("API 주소 설정을 확인해 주세요.", 0, "INVALID_BASE_URL");
+    if (configured) {
+      let url: URL;
+      try { url = new URL(configured); } catch { throw new ApiError("API 주소는 절대 HTTP(S) URL이어야 합니다.", 0, "INVALID_BASE_URL"); }
+      if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
+        throw new ApiError("API 주소 설정을 확인해 주세요.", 0, "INVALID_BASE_URL");
+      }
+      return url.toString().replace(/\/$/, "");
     }
-    return url.toString().replace(/\/$/, "");
+    if (typeof window !== "undefined") {
+      return window.location.origin;
+    }
+    return (process.env.BACKEND_URL ?? "http://localhost").replace(/\/$/, "");
   }
 
   async function availability() {
     try {
       baseUrl();
-      if (!(await options.getToken?.())?.trim()) return { available: false, reason: "서버 연동 대기: 백엔드 인증 토큰이 없습니다. 로컬 데모 로그인은 서버 인증이 아닙니다." };
-      return { available: true, reason: "API 설정 및 인증 토큰 확인됨 (서버 연결은 요청 시 확인)." };
+      const token = await options.getToken?.();
+      if (!token?.trim()) return { available: false, reason: "서버 연동 대기: 로그인이 필요합니다." };
+      return { available: true, reason: "백엔드 API 서버 연결 및 인증 상태 정상." };
     } catch (error) { return { available: false, reason: apiErrorMessage(error) }; }
   }
 
@@ -111,27 +125,85 @@ export function createApiClient(options: { baseUrl?: string; getToken?: TokenGet
   };
 }
 
-// Demo auth stores a user ID only. Never interpret that ID as a bearer token.
-let tokenGetter: TokenGetter | undefined;
+let tokenGetter: TokenGetter | undefined = () => {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("meister_access_token");
+  }
+  return null;
+};
 export function setApiTokenGetter(getter: TokenGetter | undefined) { tokenGetter = getter; }
 export const apiClient = createApiClient({ getToken: () => tokenGetter?.() });
 
+export async function downloadSubmissionFile(submissionId: number | string, fallbackFilePath?: string): Promise<{ ok: boolean; message?: string }> {
+  try {
+    let downloadUrl: string | undefined;
+    const numId = Number(submissionId);
+    if (Number.isFinite(numId) && numId > 0) {
+      const res = await apiClient.request<{ downloadUrl?: string; fileUrl?: string; ticket?: string }>(
+        `/api/submissions/${numId}/download-ticket`,
+        { method: "POST" }
+      );
+      downloadUrl = res?.downloadUrl || res?.fileUrl;
+    } else if (fallbackFilePath) {
+      const res = await apiClient.request<{ downloadUrl?: string; fileUrl?: string; ticket?: string }>(
+        `/api/uploads/ticket`,
+        { method: "POST", query: { file_path: fallbackFilePath } }
+      );
+      downloadUrl = res?.downloadUrl || res?.fileUrl;
+    }
+    if (downloadUrl) {
+      const base = typeof window !== "undefined" ? window.location.origin : "";
+      const fullUrl = downloadUrl.startsWith("http") ? downloadUrl : `${base}${downloadUrl.startsWith("/") ? "" : "/"}${downloadUrl}`;
+      const link = document.createElement("a");
+      link.href = fullUrl;
+      link.target = "_blank";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      return { ok: true };
+    }
+    return { ok: false, message: "다운로드 주소를 발급받지 못했습니다." };
+  } catch (cause) {
+    return { ok: false, message: apiErrorMessage(cause) };
+  }
+}
+
 export interface BatchReport {
   total_count?: number;
+  totalProcessed?: number;
   success_count?: number;
+  successCount?: number;
   failed_count?: number;
+  failureCount?: number;
   imported_count?: number;
   total_teachers?: number;
+  createdStudentsCount?: number;
+  createdTeachersCount?: number;
   class_mappings?: unknown;
   assigned_classes?: unknown;
   errors?: { row: number | string; reason: unknown }[];
 }
 export interface AuditLogs {
-  total: number;
-  logs: { log_id: number | string; user_id: string; action: string; ip_address?: string; created_at: string; details: unknown }[];
+  total?: number;
+  pagination?: {
+    totalCount?: number;
+    page?: number;
+    limit?: number;
+    totalPages?: number;
+    hasNext?: boolean;
+    hasPrev?: boolean;
+  };
+  logs: { log_id?: number | string; logId?: number | string; id?: string; user_id?: string; action?: string; actionType?: string; ip_address?: string; ipAddress?: string; created_at?: string; createdAt?: string; details?: unknown; changes?: unknown; reason?: unknown }[];
 }
 export interface AnomalyReport {
   anomaly_count: number;
   high_risk_submissions: { submission_id: number; student_name: string; reason: string; risk_score: number }[];
 }
-export interface RecalculationReport { processed_students: number; recalculated_scores: number; duration_ms: number }
+export interface RecalculationReport {
+  processed_students?: number;
+  totalProcessedStudents?: number;
+  recalculated_scores?: number;
+  anomaliesFixedCount?: number;
+  duration_ms?: number;
+  averageTotalScore?: number;
+}

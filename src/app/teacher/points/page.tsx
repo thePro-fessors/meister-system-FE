@@ -13,6 +13,7 @@ import { canModifyPoint, validPointMagnitude } from "@/lib/point-actions";
 import { PointType } from "@/lib/types";
 import { academicYear } from "@/lib/grading";
 import { DeletePointButton } from "@/components/DeletePointButton";
+import { apiErrorMessage } from "@/lib/api-client";
 
 export default function TeacherPointsPage() {
   const { user } = useAuth();
@@ -41,7 +42,7 @@ export default function TeacherPointsPage() {
 
   const studentName = (id: string) => users.find((u) => u.id === id)?.name ?? id;
 
-  function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!reason.trim()) {
       setFormError("상벌점 부여 사유를 입력해 주세요.");
@@ -56,19 +57,23 @@ export default function TeacherPointsPage() {
       return;
     }
     setFormError(null);
-    addPoint({
-      id: `pt-${Date.now()}`,
-      studentId,
-      type,
-      score: type === "상점" ? Math.abs(score) : -Math.abs(score),
-      reason,
-      date,
-      year: academicYear(date),
-      teacherId: user!.id,
-      reflected: false,
-    });
-    setReason("");
-    setScore(1);
+    try {
+      await addPoint({
+        id: `pt-${Date.now()}`,
+        studentId,
+        type,
+        score: type === "상점" ? Math.abs(score) : -Math.abs(score),
+        reason,
+        date,
+        year: academicYear(date),
+        teacherId: user!.id,
+        reflected: false,
+      });
+      setReason("");
+      setScore(1);
+    } catch (cause) {
+      setFormError(apiErrorMessage(cause));
+    }
   }
 
   function startEdit(id: string, currentScore: number) {
@@ -77,7 +82,7 @@ export default function TeacherPointsPage() {
     setEditReason("");
   }
 
-  function saveEdit(id: string, type: PointType) {
+  async function saveEdit(id: string, type: PointType) {
     const point = list.find((p) => p.id === id);
     const student = users.find((u) => u.id === point?.studentId);
     if (!user || !point || !student || !canModifyPoint(user, point, student) || !editReason.trim() || !validPointMagnitude(editScore)) {
@@ -85,13 +90,17 @@ export default function TeacherPointsPage() {
       return;
     }
     setFormError(null);
-    try { updatePoint(
-      id,
-      { score: type === "상점" ? Math.abs(editScore) : -Math.abs(editScore) },
-      user!.id,
-      editReason
-    ); } catch (cause) { setFormError(cause instanceof Error ? cause.message : "수정하지 못했습니다."); return; }
-    setEditingId(null);
+    try {
+      await updatePoint(
+        id,
+        { score: type === "상점" ? Math.abs(editScore) : -Math.abs(editScore) },
+        user!.id,
+        editReason
+      );
+      setEditingId(null);
+    } catch (cause) {
+      setFormError(apiErrorMessage(cause));
+    }
   }
 
   return (

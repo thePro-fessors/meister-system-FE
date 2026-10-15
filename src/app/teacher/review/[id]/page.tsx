@@ -2,13 +2,14 @@
 
 import { use, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, FileText, Link as LinkIcon } from "lucide-react";
+import { ArrowLeft, FileText, Link as LinkIcon, Sparkles } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { StatusPill } from "@/components/StatusPill";
 import { canManageStudent, canReviewSubmission } from "@/lib/teacherScope";
 import { computeAreaResults } from "@/lib/grading";
+import { apiClient, apiErrorMessage, downloadSubmissionFile } from "@/lib/api-client";
 
 export default function ReviewPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -31,6 +32,12 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
   const [rejectStatus, setRejectStatus] = useState<"반려" | "재제출요청">("반려");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiDraftInfo, setAiDraftInfo] = useState<{
+    guideline?: string;
+    checkPoints?: string[];
+    confidence?: number;
+  } | null>(null);
   const saving = useRef(false);
 
   const alreadyApproved = submission?.status === "인정완료";
@@ -43,6 +50,50 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
   } catch { /* Legacy demo links may not be valid URLs. */ }
 
   const maxScore = item?.maxScore ?? 0;
+
+  async function requestAiDraft() {
+    if (!submission) return;
+    setAiLoading(true);
+    setError(null);
+    try {
+      const numId = Number(submission.id.replace(/^sub-/, ""));
+      const res = await apiClient.request<{
+        recommendedStatus?: string;
+        recommendedScore?: number;
+        score?: number;
+        teacherCommentDraft?: string;
+        draftComment?: string;
+        guidelineSummary?: string;
+        checkPoints?: string[];
+        confidence?: number;
+      }>("/api/ai/teacher/review-draft", {
+        method: "POST",
+        body: {
+          submissionId: Number.isFinite(numId) && numId > 0 ? numId : undefined,
+          area: submission.area,
+          itemName: submission.itemName,
+          detail: submission.detail,
+          description: submission.description,
+          criteria: item?.description || item?.scoringType || "배점 기준에 따른 심사",
+          maxScore,
+        },
+      });
+      const draft = res.teacherCommentDraft || res.draftComment;
+      if (draft) setComment(draft);
+      const recScore = res.recommendedScore ?? res.score;
+      if (recScore !== undefined && recScore !== null) setScoreInput(String(recScore));
+      setAiDraftInfo({
+        guideline: res.guidelineSummary,
+        checkPoints: res.checkPoints,
+        confidence: res.confidence,
+      });
+      setNotice("AI 심사 초안 및 추천 점수를 불러왔습니다. 검토 후 확정해 주세요.");
+    } catch (e) {
+      setError(`AI 초안 생성 실패: ${apiErrorMessage(e)}`);
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   async function approve() {
     if (saving.current) return;
@@ -72,7 +123,7 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
         { before: submission.score, after: score, reason: comment.trim() || "승인", at: new Date().toISOString() },
       ],
     });
-    setNotice("저장했습니다. 학생 점수를 다시 계산했습니다 (로컬 데모).");
+    setNotice("저장했습니다. 심사 결과가 성공적으로 반영되었습니다.");
     setComment("");
     } catch { setError("저장하지 못했습니다. 다시 시도해 주세요."); }
     finally { saving.current = false; setBusy(false); }
@@ -128,15 +179,40 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
       />
       {notice && <p role="status" className="mb-4 text-sm text-certified">{notice}</p>}
       <section className="mb-5 rounded-lg border border-brass/40 bg-brass-soft/40 p-5">
-        <h2 className="text-sm font-semibold">AI 심사 Copilot · 로컬 데모</h2>
-        <p className="mt-2 text-sm text-ink-soft">서버 AI가 아닌 로컬 검토 문구 템플릿입니다. 파일 내용을 분석하거나 진위를 확인하지 않으며 점수를 자동 부여하지 않습니다.</p>
-        <button disabled={busy || !editable} onClick={() => {
-          setComment(alreadyApproved ? "" : `${submission.itemName}의 인정 기준과 활동일을 확인해 주세요. ${submission.fileName ? "데모 파일은 원본이 저장되지 않으므로 실제 증빙을 별도로 확인해야 합니다." : "첨부 링크와 증빙 요건을 확인해 주세요."}`);
-          setNotice(alreadyApproved ? "점수 수정 사유는 실제 변경 이유를 직접 입력해 주세요." : "로컬 검토 초안을 입력했습니다. 실제 증빙 확인 후 수정해 주세요.");
-        }} className="mt-3 rounded-md border border-line px-3 py-2 text-sm disabled:opacity-50">로컬 심사 초안 생성</button>
+        <div className="flex items-center justify-between">
+          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+            <Sparkles size={16} className="text-brass" /> AI 심사 Copilot
+          </h2>
+          {aiDraftInfo?.confidence !== undefined && (
+            <span className="text-xs font-medium text-brass">신뢰도: {Math.round(aiDraftInfo.confidence * 100)}%</span>
+          )}
+        </div>
+        <p className="mt-2 text-xs text-ink-soft">
+          제출 내용과 평가 기준을 AI가 분석하여 검토 의견 초안과 권장 점수를 제안합니다. 최종 심사 결과는 교사가 확인 후 결정합니다.
+        </p>
+        {aiDraftInfo?.guideline && (
+          <div className="mt-3 rounded-md bg-paper-raised p-3 text-xs text-ink">
+            <p className="font-semibold text-brass">심사 가이드 요약</p>
+            <p className="mt-1">{aiDraftInfo.guideline}</p>
+            {aiDraftInfo.checkPoints && aiDraftInfo.checkPoints.length > 0 && (
+              <ul className="mt-2 list-inside list-disc space-y-0.5 text-ink-soft">
+                {aiDraftInfo.checkPoints.map((cp, idx) => (
+                  <li key={idx}>{cp}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        <button
+          disabled={busy || !editable || aiLoading}
+          onClick={requestAiDraft}
+          className="mt-3 rounded-md border border-line bg-paper-raised px-3 py-1.5 text-sm font-medium text-ink hover:bg-paper disabled:opacity-50"
+        >
+          {aiLoading ? "AI 분석 중..." : "AI 심사 초안 생성"}
+        </button>
       </section>
       <section aria-live="polite" className="mb-5 rounded-lg border border-line p-4 text-sm">
-        <h2 className="font-semibold">학생 영역별 점수 · 로컬 계산</h2>
+        <h2 className="font-semibold">학생 영역별 점수</h2>
         {user && canManageStudent(user, student) && year && student.grade && computeAreaResults(student.id, year.year, student.grade, year, submissions, points).map((r) => <p key={r.area}>{r.area}: {r.score} / {r.maxScore}</p>)}
       </section>
 
@@ -175,8 +251,15 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
 
             <div className="mt-3 flex flex-wrap gap-3 text-xs text-ink-soft">
               {submission.fileName && (
-                <button type="button" onClick={() => setNotice("로컬 데모는 파일명만 저장합니다. 원본 다운로드 및 1회용 티켓 발급을 제공하지 않습니다.")} className="inline-flex items-center gap-1 text-left">
-                  <FileText size={13} strokeWidth={1.75} /> {submission.fileName} · 다운로드 불가 (데모)
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const res = await downloadSubmissionFile(submission.id, submission.filePath);
+                    if (!res.ok) setNotice(res.message || "파일 다운로드 실패");
+                  }}
+                  className="inline-flex items-center gap-1 text-left text-brass hover:underline"
+                >
+                  <FileText size={13} strokeWidth={1.75} /> {submission.fileName} (다운로드)
                 </button>
               )}
               {submission.link && (

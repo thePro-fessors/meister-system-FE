@@ -1,16 +1,54 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/context/AuthContext";
 import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { StatusPill } from "@/components/StatusPill";
 import { canReviewSubmission, isInTeacherScope } from "@/lib/teacherScope";
+import { apiClient } from "@/lib/api-client";
+import { SubmissionStatus } from "@/lib/types";
+
+interface ServerSubmissionRow {
+  id: string | number;
+  submissionId?: string | number;
+  studentName: string;
+  area: string;
+  itemName: string;
+  status: SubmissionStatus;
+  submittedAt: string;
+}
+
+interface ServerDashboardData {
+  pendingCount?: number;
+  resubmittedCount?: number;
+  unscoredCount?: number;
+  studentCount?: number;
+  scopeLabel?: string;
+  recentSubmissions?: ServerSubmissionRow[];
+}
 
 export default function TeacherDashboard() {
   const { user } = useAuth();
   const { users, submissions } = useData();
+  const [serverDashboard, setServerDashboard] = useState<ServerDashboardData | null>(null);
+
+  useEffect(() => {
+    let ignore = false;
+    async function load() {
+      try {
+        const res = await apiClient.request<ServerDashboardData>("/api/teacher/dashboard");
+        if (!ignore && res) {
+          setServerDashboard(res);
+        }
+      } catch {
+        // Fall back to context calculation
+      }
+    }
+    void load();
+    return () => { ignore = true; };
+  }, []);
 
   const scopedStudentIds = useMemo(() => {
     if (!user) return new Set<string>();
@@ -31,18 +69,42 @@ export default function TeacherDashboard() {
 
   const studentName = (id: string) => users.find((u) => u.id === id)?.name ?? id;
 
+  const displayPending = serverDashboard?.pendingCount ?? pending.length;
+  const displayResubmitted = serverDashboard?.resubmittedCount ?? resubmitted.length;
+  const displayUnscored = serverDashboard?.unscoredCount ?? unscored.length;
+  const displayStudentCount = serverDashboard?.studentCount ?? scopedStudentIds.size;
+  const displayScope = serverDashboard?.scopeLabel ?? (user?.homeroom ? `권한 범위: ${user.homeroom}` : "담당 학생 자료를 확인하세요.");
+
+  const displayRecent = serverDashboard?.recentSubmissions && serverDashboard.recentSubmissions.length > 0
+    ? serverDashboard.recentSubmissions.map((s) => ({
+        id: String(s.id ?? s.submissionId),
+        submittedAt: s.submittedAt ? String(s.submittedAt).slice(0, 10) : "",
+        studentName: s.studentName,
+        area: s.area,
+        itemName: s.itemName,
+        status: s.status,
+      }))
+    : recent.map((s) => ({
+        id: s.id,
+        submittedAt: s.submittedAt,
+        studentName: studentName(s.studentId),
+        area: s.area,
+        itemName: s.itemName,
+        status: s.status,
+      }));
+
   return (
     <div>
       <PageHeader
         title="교사 대시보드"
-        description={user?.homeroom ? `권한 범위: ${user.homeroom}` : "담당 학생 자료를 확인하세요."}
+        description={displayScope}
       />
 
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-4">
-        <StatCard label="검토 대기 자료 수" value={pending.length} tone="amber" />
-        <StatCard label="재제출 자료" value={resubmitted.length} tone="alert" />
-        <StatCard label="점수 미부여 자료" value={unscored.length} tone="navy" />
-        <StatCard label="권한 범위 학생 수" value={scopedStudentIds.size} tone="brass" />
+        <StatCard label="검토 대기 자료 수" value={displayPending} tone="amber" />
+        <StatCard label="재제출 자료" value={displayResubmitted} tone="alert" />
+        <StatCard label="점수 미부여 자료" value={displayUnscored} tone="navy" />
+        <StatCard label="권한 범위 학생 수" value={displayStudentCount} tone="brass" />
       </div>
 
       <div className="overflow-hidden rounded-lg border border-line bg-paper-raised">
@@ -60,10 +122,10 @@ export default function TeacherDashboard() {
             </tr>
           </thead>
           <tbody>
-            {recent.map((s) => (
+            {displayRecent.map((s) => (
               <tr key={s.id}>
                 <td className="text-ink-soft">{s.submittedAt}</td>
-                <td className="font-medium text-ink">{studentName(s.studentId)}</td>
+                <td className="font-medium text-ink">{s.studentName}</td>
                 <td className="text-ink-soft">
                   {s.area} · {s.itemName}
                 </td>
@@ -77,7 +139,7 @@ export default function TeacherDashboard() {
                 </td>
               </tr>
             ))}
-            {recent.length === 0 && (
+            {displayRecent.length === 0 && (
               <tr>
                 <td colSpan={5} className="py-8 text-center text-ink-soft">
                   제출된 자료가 없습니다.

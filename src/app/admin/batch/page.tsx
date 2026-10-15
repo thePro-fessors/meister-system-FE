@@ -29,12 +29,19 @@ export default function BatchPage() {
         const body = new FormData(); body.append("file", file);
         void task.run(async (signal) => {
           const result = await apiClient.request<BatchReport>(modes[mode].path, { method: "POST", body, signal });
-          if (!result || typeof result !== "object" ||
-            ![result.total_count, result.imported_count, result.total_teachers].some((count) => typeof count === "number") ||
+          const total = result?.total_count ?? result?.totalProcessed;
+          const success = result?.success_count ?? result?.successCount;
+          const hasCount = [total, success, result?.imported_count, result?.total_teachers].some((count) => typeof count === "number");
+          if (!result || typeof result !== "object" || !hasCount ||
             (result.errors !== undefined && (!Array.isArray(result.errors) || result.errors.some((error) => !error || typeof error !== "object")))) {
             throw new ApiError("등록 결과 형식이 올바르지 않습니다. 재시도 전에 서버 등록 내역을 확인하세요.", 0, "INVALID_RESPONSE");
           }
-          return result;
+          return {
+            ...result,
+            total_count: total,
+            success_count: success,
+            failed_count: result.failed_count ?? result.failureCount ?? (result as any).failedCount,
+          };
         });
       }}>
         <label className="block space-y-2 text-sm">등록 유형
@@ -65,7 +72,7 @@ export default function BatchPage() {
     {report && <SpecAdminPanel>
       <h2 className="font-display font-semibold">등록 결과 · {modes[mode].label}</h2>
       <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-        {([["전체", report.total_count], ["성공", report.success_count], ["실패", report.failed_count], ["등록 학생", report.imported_count], ["등록 교원", report.total_teachers]] as const).map(([label, count]) => count !== undefined && <div key={label}><dt className="text-sm text-ink-soft">{label}</dt><dd className="text-xl font-semibold">{count}</dd></div>)}
+        {([["전체", report.total_count ?? report.totalProcessed], ["성공", report.success_count ?? report.successCount], ["실패", report.failed_count ?? (report as any).failedCount], ["등록 학생", report.imported_count ?? (report as any).createdStudentsCount], ["등록 교원", report.total_teachers ?? (report as any).createdTeachersCount]] as const).map(([label, count]) => count !== undefined && <div key={label}><dt className="text-sm text-ink-soft">{label}</dt><dd className="text-xl font-semibold">{count}</dd></div>)}
       </dl>
       {report.class_mappings !== undefined && <div><h3 className="text-sm font-semibold">학급 매핑</h3><pre className="overflow-auto whitespace-pre-wrap break-all text-sm">{JSON.stringify(report.class_mappings, null, 2)}</pre></div>}
       {report.assigned_classes !== undefined && <div><h3 className="text-sm font-semibold">담당 학급 배정</h3><pre className="overflow-auto whitespace-pre-wrap break-all text-sm">{JSON.stringify(report.assigned_classes, null, 2)}</pre></div>}
