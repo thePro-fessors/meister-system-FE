@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { DemoUser, PointRecord, Submission, User, YearCriteria } from "@/lib/types";
 import { AuthError, createDemoAuthService, publicUser, type AuthService } from "@/lib/auth-service";
 import { SEED_CRITERIA, SEED_POINTS, SEED_SUBMISSIONS, SEED_USERS } from "@/lib/seed";
@@ -55,6 +55,7 @@ interface DataContextValue extends Omit<DataShape, "users"> {
   users: User[];
   authService: AuthService;
   registerStudent: (input: Pick<DemoUser, "id" | "password" | "name" | "grade" | "classNo" | "number">) => void;
+  registerTeacher: (input: Pick<DemoUser, "id" | "password" | "name"> & { invitationCode: string }) => Promise<void>;
   addSubmission: (s: Submission) => void;
   updateSubmission: (id: string, patch: Partial<Submission>) => void;
   deleteSubmission: (id: string, studentId: string) => void;
@@ -132,8 +133,20 @@ class StorageRecovery extends React.Component<{ children: React.ReactNode }, { f
 }
 
 function HydratedDataProvider({ children }: { children: React.ReactNode }) {
-  const [data, setData] = useState<DataShape>(loadInitial);
+  const [data, setReactData] = useState<DataShape>(loadInitial);
+  const latestData = useRef(data);
+  const setData = useCallback((update: React.SetStateAction<DataShape>) => {
+    const next = typeof update === "function" ? update(latestData.current) : update;
+    latestData.current = next;
+    setReactData(next);
+  }, []);
   const [storageError, setStorageError] = useState(false);
+  const teacherRegistrationPending = useRef(false);
+  const mounted = useRef(false);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
   const authService = useMemo(
     () => createDemoAuthService(() => data.users, () => window.sessionStorage),
     [data.users]
@@ -160,6 +173,57 @@ function HydratedDataProvider({ children }: { children: React.ReactNode }) {
       },
       users: data.users.map(publicUser),
       authService,
+      registerTeacher: async (input) => {
+        if (teacherRegistrationPending.current) throw new AuthError("PENDING", "이미 가입을 처리 중입니다.");
+        const id = input.id.trim();
+        const name = input.name.trim();
+        const password = input.password;
+        const invitationCode = input.invitationCode;
+        if (!/^[A-Za-z0-9_]{4,20}$/.test(id) || !name || name.length > 50 || password.length < 8 || password.length > 128 || !invitationCode.trim() || invitationCode.length > 256) {
+          throw new AuthError("INVALID_INPUT", "이름, 아이디, 비밀번호 및 초대 코드 입력 조건을 확인해 주세요.");
+        }
+        if (data.users.some((user) => user.id.toLowerCase() === id.toLowerCase())) {
+          throw new AuthError("DUPLICATE_ID", "이미 사용 중인 아이디입니다.");
+        }
+        teacherRegistrationPending.current = true;
+        try {
+          let response: Response;
+          try {
+            response = await fetch("/api/auth/teacher-code", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ code: invitationCode }),
+              signal: AbortSignal.timeout(15000),
+            });
+          } catch {
+            throw new AuthError("VERIFICATION_UNAVAILABLE", "초대 코드를 확인하지 못했습니다. 연결을 확인하고 다시 시도해 주세요.");
+          }
+          if (response.status >= 500) throw new AuthError("VERIFICATION_UNAVAILABLE", "코드 확인 서비스를 사용할 수 없습니다. 잠시 후 다시 시도하거나 관리자에게 문의해 주세요.");
+          if (response.status === 429) throw new AuthError("RATE_LIMITED", "코드 확인 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.");
+          const result: unknown = await response.json().catch(() => null);
+          if (!result || typeof result !== "object" || !("verified" in result) || typeof result.verified !== "boolean") {
+            throw new AuthError("VERIFICATION_UNAVAILABLE", "코드 확인 응답을 읽지 못했습니다. 다시 시도해 주세요.");
+          }
+          if (!response.ok || result.verified !== true) {
+            throw new AuthError("INVALID_CODE", "유효한 관리자 발급 초대 코드를 입력해 주세요.");
+          }
+          if (!mounted.current) throw new AuthError("CANCELLED", "가입 처리가 취소되었습니다. 다시 시도해 주세요.");
+          // Use the latest single-writer state after network I/O, including unsaved edits.
+          const current = latestData.current;
+          if (current.users.some((user) => user.id.toLowerCase() === id.toLowerCase())) {
+            throw new AuthError("DUPLICATE_ID", "이미 사용 중인 아이디입니다.");
+          }
+          const next: DataShape = { ...current, users: [...current.users, { id, name, password, role: "teacher" }] };
+          try {
+            window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+          } catch {
+            throw new AuthError("STORAGE_UNAVAILABLE", "계정을 저장하지 못했습니다. 브라우저 저장소 설정을 확인해 주세요.");
+          }
+          setData(next);
+        } finally {
+          teacherRegistrationPending.current = false;
+        }
+      },
       registerStudent: (input) => {
         const id = input.id.trim();
         const name = input.name.trim();
@@ -223,7 +287,7 @@ function HydratedDataProvider({ children }: { children: React.ReactNode }) {
           points: SEED_POINTS,
         }),
     }),
-    [data, authService]
+    [data, authService, setData]
   );
 
   return <DataContext.Provider value={value}>

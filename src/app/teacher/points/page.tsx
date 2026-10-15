@@ -1,5 +1,7 @@
 "use client";
 
+import StudentCombobox from "@/components/StudentCombobox";
+
 import { useMemo, useState } from "react";
 import { Pencil, Plus } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
@@ -99,17 +101,7 @@ export default function TeacherPointsPage() {
       <form onSubmit={submit} className="mb-6 grid grid-cols-1 gap-4 rounded-lg border border-line bg-paper-raised p-6 sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <label className="mb-1.5 block text-sm font-medium text-ink">학생</label>
-          <select
-            value={studentId}
-            onChange={(e) => setStudentId(e.target.value)}
-            className="w-full rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-brass"
-          >
-            {scopedStudents.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name} ({s.grade}-{s.classNo}-{s.number})
-              </option>
-            ))}
-          </select>
+          <StudentCombobox students={scopedStudents} value={studentId} onChange={setStudentId} />
         </div>
         <div>
           <label className="mb-1.5 block text-sm font-medium text-ink">구분</label>
