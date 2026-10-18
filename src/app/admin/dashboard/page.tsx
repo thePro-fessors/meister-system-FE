@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Download } from "lucide-react";
+import { Download, KeyRound } from "lucide-react";
+import { AdminInvitationModal } from "@/components/AdminInvitationModal";
 import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { StatusPill } from "@/components/StatusPill";
@@ -33,6 +34,7 @@ export default function AdminDashboard() {
   const students = users.filter((u) => u.role === "student");
   const [overview, setOverview] = useState<AdminOverviewData | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [showInviteModal, setShowInviteModal] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -113,6 +115,13 @@ export default function AdminDashboard() {
         />
         <div className="flex items-center gap-2">
           <button
+            type="button"
+            onClick={() => setShowInviteModal(true)}
+            className="inline-flex items-center gap-1.5 rounded-md bg-navy px-3 py-1.5 text-xs font-medium text-white hover:bg-navy/90 transition-colors"
+          >
+            <KeyRound size={13} /> 초대코드 발급
+          </button>
+          <button
             onClick={() => handleExport("csv")}
             disabled={exporting}
             className="inline-flex items-center gap-1 rounded-md border border-line bg-paper-raised px-3 py-1.5 text-xs font-medium text-ink hover:bg-paper disabled:opacity-50"
@@ -177,6 +186,12 @@ export default function AdminDashboard() {
           </tbody>
         </table>
       </div>
+
+      <AdminInvitationModal
+        isOpen={showInviteModal}
+        onClose={() => setShowInviteModal(false)}
+        defaultYear={year?.year}
+      />
     </div>
   );
 }
