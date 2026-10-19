@@ -31,6 +31,16 @@ export default function AdminCriteriaPage() {
   const [grade, setGrade] = useState(grades[0] ?? 1);
 
   const gradeCriteria = yearCriteria?.gradeCriteria.find((g) => g.grade === grade);
+  const patchTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  function schedulePatch(key: string, fn: () => Promise<void>) {
+    if (patchTimersRef.current[key]) {
+      clearTimeout(patchTimersRef.current[key]);
+    }
+    patchTimersRef.current[key] = setTimeout(() => {
+      void fn();
+    }, 350);
+  }
 
   async function patchItem(areaName: string, itemId: string, patch: Partial<EvalItem>) {
     if (patch.maxScore !== undefined && (!Number.isFinite(patch.maxScore) || patch.maxScore < 0)) return;
@@ -58,19 +68,21 @@ export default function AdminCriteriaPage() {
     );
     const numId = Number(itemId.replace(/^item-/, ""));
     if (Number.isFinite(numId) && numId > 0) {
-      try {
-        await apiClient.request(`/api/admin/criteria/items/${numId}`, {
-          method: "PATCH",
-          body: {
-            name: patch.name,
-            maxScore: patch.maxScore,
-            isActive: patch.active,
-            requiresEvidence: patch.requiresEvidence,
-          },
-        });
-      } catch (err) {
-        setError(apiErrorMessage(err));
-      }
+      schedulePatch(`item-${numId}`, async () => {
+        try {
+          await apiClient.request(`/api/admin/criteria/items/${numId}`, {
+            method: "PATCH",
+            body: {
+              name: patch.name,
+              maxScore: patch.maxScore,
+              isActive: patch.active,
+              requiresEvidence: patch.requiresEvidence,
+            },
+          });
+        } catch (err) {
+          setError(apiErrorMessage(err));
+        }
+      });
     }
   }
 
@@ -93,14 +105,17 @@ export default function AdminCriteriaPage() {
     );
     const currentArea = gradeCriteria?.areas.find((a) => a.area === areaName);
     if (currentArea?.areaId) {
-      try {
-        await apiClient.request(`/api/admin/criteria/areas/${currentArea.areaId}`, {
-          method: "PATCH",
-          body: { maxScore },
-        });
-      } catch (err) {
-        setError(apiErrorMessage(err));
-      }
+      const areaId = currentArea.areaId;
+      schedulePatch(`area-${areaId}`, async () => {
+        try {
+          await apiClient.request(`/api/admin/criteria/areas/${areaId}`, {
+            method: "PATCH",
+            body: { maxScore },
+          });
+        } catch (err) {
+          setError(apiErrorMessage(err));
+        }
+      });
     }
   }
 
@@ -320,7 +335,13 @@ export default function AdminCriteriaPage() {
                         />
                       </td>
                       <td>
-                        <button onClick={() => removeItem(area.area, item.id)} className="text-ink-soft hover:text-alert">
+                        <button
+                          type="button"
+                          aria-label={`${item.name} 항목 삭제`}
+                          title="항목 삭제"
+                          onClick={() => removeItem(area.area, item.id)}
+                          className="text-ink-soft hover:text-alert"
+                        >
                           <Trash2 size={15} strokeWidth={1.75} />
                         </button>
                       </td>

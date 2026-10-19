@@ -6,14 +6,17 @@ export function validPointMagnitude(value: number): boolean {
 }
 
 export function canModifyPoint(actor: User, point: PointRecord, student: User): boolean {
+  const isOwnerTeacher =
+    point.teacherId === actor.id ||
+    (actor.teacherId !== undefined && String(point.teacherId) === String(actor.teacherId));
   return !point.deletedAt && canManageStudent(actor, student) &&
     (actor.role === "admin" || actor.teacherDuty === "grade_head" ||
-      actor.teacherDuty === "vice_principal" || point.teacherId === actor.id);
+      actor.teacherDuty === "vice_principal" || isOwnerTeacher);
 }
 
 export function softDeletePoint(points: PointRecord[], id: string, actor: User, users: User[], at: string): PointRecord[] {
   const point = points.find((p) => p.id === id && !p.deletedAt);
-  const student = users.find((u) => u.id === point?.studentId);
+  const student = users.find((u) => u.id === point?.studentId || (u.studentId !== undefined && String(u.studentId) === String(point?.studentId)));
   if (!point || !student || !canModifyPoint(actor, point, student)) throw new Error("삭제 권한이 없거나 이미 삭제된 기록입니다.");
   return points.map((p) => p.id === id ? { ...p, deletedAt: at, deletedBy: actor.id } : p);
 }

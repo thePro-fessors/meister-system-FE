@@ -37,12 +37,19 @@ export function canManageStudent(teacher: User, student: User): boolean {
   return scope?.areas === undefined && scope?.itemIds === undefined;
 }
 
+export function isSubmissionOfStudent(submission: Submission, student: User): boolean {
+  if (submission.studentId === student.id) return true;
+  if (student.studentId !== undefined && String(submission.studentId) === String(student.studentId)) return true;
+  if (submission.rawStudentId !== undefined && student.studentId !== undefined && submission.rawStudentId === student.studentId) return true;
+  return false;
+}
+
 export function canReviewSubmission(teacher: User, student: User, submission: Submission, adjust = false): boolean {
-  if (!isInTeacherScope(teacher, student) || submission.studentId !== student.id) return false;
+  if (!isInTeacherScope(teacher, student) || !isSubmissionOfStudent(submission, student)) return false;
   if (teacher.role === "admin") return true;
   const scope = teacher.teacherScope;
   if (scope?.areas && !scope.areas.includes(submission.area)) return false;
-  if (scope?.itemIds && !scope.itemIds.includes(submission.itemId)) return false;
+  if (scope?.itemIds && !scope.itemIds.some((id) => String(id).replace(/^item-/, "") === String(submission.itemId).replace(/^item-/, ""))) return false;
   if (adjust && teacher.teacherDuty === "subject_teacher") return false;
   return true;
 }

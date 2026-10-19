@@ -3,8 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { apiClient, apiErrorMessage } from "@/lib/api-client";
+import { loginDestination } from "@/lib/navigation";
 
 const inputClass = "mt-1.5 w-full rounded-md border border-line bg-white px-3 py-2.5 text-sm outline-none focus:border-brass focus:ring-1 focus:ring-brass disabled:opacity-50";
 
@@ -27,6 +29,7 @@ export default function SignupPage() {
   const [id, setId] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,20 +37,29 @@ export default function SignupPage() {
   const [complete, setComplete] = useState(false);
 
   useEffect(() => {
-    if (!loading && user) router.replace(`/${user.role}/dashboard`);
+    if (!loading && user) router.replace(loginDestination(user.role));
   }, [loading, user, router]);
 
   async function handleSendOtp() {
     setError(null);
     setInfo(null);
-    if (!email.trim()) {
-      setError("학교 이메일 주소를 입력해 주세요.");
+    const trimmedEmail = email.trim().toLowerCase();
+    if (!trimmedEmail) {
+      setError(role === "admin" ? "이메일 주소를 입력해 주세요." : "학교 이메일 주소를 입력해 주세요.");
+      return;
+    }
+    if (role !== "admin" && !trimmedEmail.endsWith("@bssm.hs.kr")) {
+      setError("학교 이메일(@bssm.hs.kr)만 가입할 수 있습니다.");
+      return;
+    }
+    if (role === "admin" && !adminCode.trim()) {
+      setError("관리자 등록 코드를 입력해 주세요.");
       return;
     }
     setPending(true);
     try {
       const payload: Record<string, any> = {
-        email: email.trim(),
+        email: trimmedEmail,
         purpose: "register",
         is_it_student: role === "student",
       };
@@ -84,7 +96,7 @@ export default function SignupPage() {
       const res = await apiClient.request<{ registerToken?: string; register_token?: string }>("/api/auth/verify-otp", {
         method: "POST",
         body: {
-          email: email.trim(),
+          email: email.trim().toLowerCase(),
           verify_code: otpCode.trim(),
           purpose: "register",
         },
@@ -125,7 +137,7 @@ export default function SignupPage() {
       await apiClient.request("/api/auth/register", {
         method: "POST",
         body: {
-          email: email.trim(),
+          email: email.trim().toLowerCase(),
           id: id.trim(),
           password,
           register_token: registerToken,
@@ -185,7 +197,9 @@ export default function SignupPage() {
                   </div>
 
                   <div>
-                    <label htmlFor="email" className="text-sm font-medium text-ink">학교 이메일 (@bssm.hs.kr)</label>
+                    <label htmlFor="email" className="text-sm font-medium text-ink">
+                      {role === "admin" ? "이메일" : "학교 이메일 (@bssm.hs.kr)"}
+                    </label>
                     <input
                       id="email"
                       type="email"
@@ -193,7 +207,7 @@ export default function SignupPage() {
                       required
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="user@bssm.hs.kr"
+                      placeholder={role === "admin" ? "admin@example.com" : "user@bssm.hs.kr"}
                       className={inputClass}
                     />
                   </div>
@@ -321,23 +335,33 @@ export default function SignupPage() {
                   </div>
                   <div>
                     <label htmlFor="password" className="text-sm font-medium text-ink">비밀번호</label>
-                    <input
-                      id="password"
-                      type="password"
-                      required
-                      minLength={8}
-                      disabled={pending}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="8자 이상 (영문, 숫자, 특수문자)"
-                      className={inputClass}
-                    />
+                    <div className="relative">
+                      <input
+                        id="password"
+                        type={showPassword ? "text" : "password"}
+                        required
+                        minLength={8}
+                        disabled={pending}
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="8자 이상 (영문, 숫자, 특수문자)"
+                        className={`${inputClass} pr-10`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((prev) => !prev)}
+                        aria-label={showPassword ? "비밀번호 숨기기" : "비밀번호 보기"}
+                        className="absolute right-2.5 top-[calc(50%+3px)] -translate-y-1/2 rounded p-1 text-ink-soft hover:text-ink"
+                      >
+                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
                   </div>
                   <div>
                     <label htmlFor="confirmPassword" className="text-sm font-medium text-ink">비밀번호 확인</label>
                     <input
                       id="confirmPassword"
-                      type="password"
+                      type={showPassword ? "text" : "password"}
                       required
                       minLength={8}
                       disabled={pending}

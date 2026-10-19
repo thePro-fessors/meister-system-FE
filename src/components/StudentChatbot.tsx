@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { MessageCircle, Send, Sparkles, X } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useData } from "@/context/DataContext";
@@ -15,10 +16,11 @@ interface Message {
   suggestions?: string[];
 }
 
-export function StudentChatbot() {
+export function StudentChatbot({ embedded = false }: { embedded?: boolean }) {
   const { user } = useAuth();
   const { criteria, submissions, points } = useData();
-  const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+  const [open, setOpen] = useState(embedded);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
@@ -34,17 +36,20 @@ export function StudentChatbot() {
   );
 
   const mySubmissions = useMemo(
-    () => submissions.filter((s) => s.studentId === user?.id && s.year === year?.year),
+    () => submissions.filter((s) => (s.studentId === user?.id || (user?.studentId && String(s.rawStudentId ?? s.studentId) === String(user.studentId))) && s.year === year?.year),
     [submissions, user, year]
   );
-  const myPoints = useMemo(() => points.filter((p) => p.studentId === user?.id), [points, user]);
+  const myPoints = useMemo(
+    () => points.filter((p) => p.studentId === user?.id || (user?.studentId && String(p.rawStudentId ?? p.studentId) === String(user.studentId))),
+    [points, user]
+  );
 
   const totalScore = results.reduce((sum, r) => sum + r.score, 0);
   const hasUnderReview = mySubmissions.some((s) => ["제출완료", "검토중", "재제출요청"].includes(s.status));
   const certStatus = computeCertStatus(results, hasUnderReview);
 
-  function toggleChat() {
-    if (!open && messages.length === 0 && user) {
+  useEffect(() => {
+    if ((embedded || open) && messages.length === 0 && user) {
       setMessages([
         {
           id: "welcome",
@@ -54,6 +59,9 @@ export function StudentChatbot() {
         },
       ]);
     }
+  }, [embedded, open, messages.length, user]);
+
+  function toggleChat() {
     setOpen((value) => !value);
   }
 
@@ -94,7 +102,6 @@ export function StudentChatbot() {
       };
       setMessages((m) => [...m, botMsg]);
     } catch {
-      // Fallback to local rule engine if offline or server AI fails
       const fallbackReply = answerStudentQuestion(text, {
         student: user,
         year: year.year,
@@ -118,76 +125,88 @@ export function StudentChatbot() {
   }
 
   if (!user) return null;
+  if (!embedded && pathname === "/student/chat") return null;
 
-  return (
-    <div className="pointer-events-none fixed bottom-6 right-6 z-50 w-80 max-w-[calc(100vw-3rem)]">
-      {open && (
-        <div className="chatbot-panel pointer-events-auto mb-3 flex h-112 max-h-[calc(100dvh-7rem)] w-full flex-col overflow-hidden rounded-lg border border-line bg-paper-raised shadow-xl">
-          <div className="flex items-center justify-between border-b border-line bg-navy px-4 py-3">
-            <div className="flex items-center gap-2 text-white">
-              <Sparkles size={16} strokeWidth={1.75} />
-              <p className="font-display text-sm font-semibold">AI 학생 도우미</p>
+  const panelContent = (
+    <div
+      className={
+        embedded
+          ? "flex h-[32rem] w-full flex-col overflow-hidden rounded-lg border border-line bg-paper-raised shadow-sm"
+          : "chatbot-panel pointer-events-auto mb-3 flex h-112 max-h-[calc(100dvh-7rem)] w-full flex-col overflow-hidden rounded-lg border border-line bg-paper-raised shadow-xl"
+      }
+    >
+      <div className="flex items-center justify-between border-b border-line bg-navy px-4 py-3">
+        <div className="flex items-center gap-2 text-white">
+          <Sparkles size={16} strokeWidth={1.75} />
+          <p className="font-display text-sm font-semibold">AI 학생 도우미</p>
+        </div>
+      </div>
+
+      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
+        {messages.map((m) => (
+          <div key={m.id} className={`flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}>
+            <div
+              className={`max-w-[85%] whitespace-pre-line rounded-lg px-3 py-2 text-sm ${
+                m.role === "user" ? "bg-navy text-white" : "bg-navy-soft text-ink"
+              }`}
+            >
+              {m.text}
             </div>
-          </div>
-
-          <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-            {messages.map((m) => (
-              <div key={m.id} className={`flex flex-col ${m.role === "user" ? "items-end" : "items-start"}`}>
-                <div
-                  className={`max-w-[85%] whitespace-pre-line rounded-lg px-3 py-2 text-sm ${
-                    m.role === "user" ? "bg-navy text-white" : "bg-navy-soft text-ink"
-                  }`}
-                >
-                  {m.text}
-                </div>
-                {m.role === "bot" && m.suggestions && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {m.suggestions.map((s) => (
-                      <button
-                        key={s}
-                        onClick={() => send(s)}
-                        className="rounded-full border border-brass/50 bg-brass-soft/50 px-2.5 py-1 text-xs text-ink hover:bg-brass-soft"
-                      >
-                        {s}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-            {loading && (
-              <div className="flex items-start">
-                <div className="max-w-[85%] rounded-lg bg-navy-soft px-3 py-2 text-xs text-ink-soft animate-pulse">
-                  AI가 분석하고 있습니다...
-                </div>
+            {m.role === "bot" && m.suggestions && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {m.suggestions.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => send(s)}
+                    className="rounded-full border border-brass/50 bg-brass-soft/50 px-2.5 py-1 text-xs text-ink hover:bg-brass-soft"
+                  >
+                    {s}
+                  </button>
+                ))}
               </div>
             )}
           </div>
+        ))}
+        {loading && (
+          <div className="flex items-start">
+            <div className="max-w-[85%] rounded-lg bg-navy-soft px-3 py-2 text-xs text-ink-soft animate-pulse">
+              AI가 분석하고 있습니다...
+            </div>
+          </div>
+        )}
+      </div>
 
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              send(input);
-            }}
-            className="flex items-center gap-2 border-t border-line px-3 py-3"
-          >
-            <input
-              aria-label="도우미에게 질문"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="궁금한 점을 물어보세요"
-              className="flex-1 rounded-full border border-line px-3 py-2 text-sm outline-none focus:border-brass focus:ring-1 focus:ring-brass"
-            />
-            <button
-              type="submit"
-              aria-label="질문 보내기"
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-navy text-white hover:bg-ink"
-            >
-              <Send size={15} strokeWidth={1.75} />
-            </button>
-          </form>
-        </div>
-      )}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          send(input);
+        }}
+        className="flex items-center gap-2 border-t border-line px-3 py-3"
+      >
+        <input
+          aria-label="도우미에게 질문"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="궁금한 점을 물어보세요"
+          className="flex-1 rounded-full border border-line px-3 py-2 text-sm outline-none focus:border-brass focus:ring-1 focus:ring-brass"
+        />
+        <button
+          type="submit"
+          aria-label="질문 보내기"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-navy text-white hover:bg-ink"
+        >
+          <Send size={15} strokeWidth={1.75} />
+        </button>
+      </form>
+    </div>
+  );
+
+  if (embedded) return panelContent;
+
+  return (
+    <div className="pointer-events-none fixed bottom-6 right-6 z-50 w-80 max-w-[calc(100vw-3rem)]">
+      {open && panelContent}
 
       <button
         onClick={toggleChat}

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
@@ -33,13 +34,12 @@ const NAV: Record<Role, NavItem[]> = {
     { href: "/student/chat", label: "역량인증 도우미", icon: MessageCircle },
   ],
   teacher: [
-    { href: "/teacher/chat", label: "학급 지도 도우미", icon: Users },
     { href: "/teacher/dashboard", label: "교사 대시보드", icon: LayoutDashboard },
     { href: "/teacher/students", label: "학생 자료 조회", icon: Users },
     { href: "/teacher/points", label: "상벌점 관리", icon: Star },
+    { href: "/teacher/chat", label: "학급 지도 도우미", icon: MessageCircle },
   ],
   admin: [
-    { href: "/admin/ai/audit", label: "AI 이상치 감사", icon: ShieldCheck },
     { href: "/admin/overview", label: "전체 현황", icon: Gauge },
     { href: "/teacher/dashboard", label: "증빙 심사", icon: ClipboardList },
     { href: "/teacher/students", label: "학생 자료 조회", icon: Users },
@@ -48,6 +48,7 @@ const NAV: Record<Role, NavItem[]> = {
     { href: "/admin/criteria", label: "기준 · 배점 관리", icon: Settings2 },
     { href: "/admin/batch", label: "일괄 등록 · 내보내기", icon: Upload },
     { href: "/admin/audit", label: "감사 로그", icon: ClipboardList },
+    { href: "/admin/ai/audit", label: "AI 이상치 감사", icon: ShieldCheck },
   ],
 };
 
@@ -60,6 +61,7 @@ const ROLE_LABEL: Record<Role, string> = {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, logout, pending, error } = useAuth();
   const pathname = usePathname();
+  const [confirmLogout, setConfirmLogout] = useState(false);
 
   if (!user) return null;
 
@@ -110,15 +112,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {user.role === "teacher" && user.homeroom && ` · 담임 (${user.homeroom})`}
             </p>
           </div>
-          <button
-            onClick={() => { if (window.confirm("로그아웃하시겠습니까?")) void logout(); }}
-            disabled={pending}
-            aria-busy={pending}
-            className="flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm text-ink-soft transition-colors hover:bg-alert-soft hover:text-alert md:w-full"
-          >
-            <LogOut size={16} strokeWidth={1.75} />
-            로그아웃
-          </button>
+          {!confirmLogout ? (
+            <button
+              onClick={() => setConfirmLogout(true)}
+              disabled={pending}
+              aria-busy={pending}
+              className="flex shrink-0 items-center gap-2 rounded-md px-3 py-2 text-sm text-ink-soft transition-colors hover:bg-alert-soft hover:text-alert md:w-full"
+            >
+              <LogOut size={16} strokeWidth={1.75} />
+              로그아웃
+            </button>
+          ) : (
+            <div className="flex items-center gap-1.5 px-2">
+              <button
+                onClick={() => { setConfirmLogout(false); void logout(); }}
+                disabled={pending}
+                className="flex-1 rounded-md bg-alert px-2.5 py-1.5 text-xs font-semibold text-white hover:opacity-90"
+              >
+                로그아웃 확인
+              </button>
+              <button
+                onClick={() => setConfirmLogout(false)}
+                className="rounded-md border border-line px-2.5 py-1.5 text-xs text-ink-soft hover:bg-paper-raised"
+              >
+                취소
+              </button>
+            </div>
+          )}
           {error && <p role="alert" className="px-2 text-xs text-alert">{error}</p>}
         </div>
       </aside>

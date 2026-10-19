@@ -9,11 +9,15 @@ export function AiServicePanel({
   endpoint,
   description,
   action,
+  presets,
+  emptyMessage,
 }: {
   title: string;
   endpoint: string;
   description: string;
   action: string;
+  presets?: string[];
+  emptyMessage?: string;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,16 +25,18 @@ export function AiServicePanel({
   const [promptInput, setPromptInput] = useState("");
   const [conversationId, setConversationId] = useState<string | undefined>(undefined);
 
-  async function execute() {
+  async function execute(overridePrompt?: string) {
     setLoading(true);
     setError(null);
+    const activePrompt = overridePrompt !== undefined ? overridePrompt : promptInput;
+    if (overridePrompt !== undefined) setPromptInput(overridePrompt);
     try {
       let body: any = {};
       if (endpoint.includes("summary-report")) {
         body = { year: 2026, grade: 1 };
       } else if (endpoint.includes("teacher/chat")) {
         body = {
-          message: promptInput.trim() || "우리 반 역량인증 취약 영역 분석 및 지도방안 제안",
+          message: activePrompt.trim() || "우리 반 역량인증 취약 영역 분석 및 지도방안 제안",
           conversationId,
         };
       } else if (endpoint.includes("audit-anomalies")) {
@@ -66,7 +72,7 @@ export function AiServicePanel({
       <p className="text-sm text-ink-soft">{description}</p>
 
       {endpoint.includes("teacher/chat") && (
-        <div className="space-y-1.5">
+        <div className="space-y-2">
           <label className="text-xs font-medium text-ink">상담 질문 입력</label>
           <input
             value={promptInput}
@@ -74,12 +80,27 @@ export function AiServicePanel({
             placeholder="예: 외국어 역량 미달성 학생 명단과 추천 지도방안 알려줘"
             className="w-full rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-brass focus:ring-1 focus:ring-brass"
           />
+          {presets && presets.length > 0 && (
+            <div className="flex flex-wrap gap-2 pt-1" aria-label="추천 질문">
+              {presets.map((text) => (
+                <button
+                  key={text}
+                  type="button"
+                  disabled={loading}
+                  onClick={() => void execute(text)}
+                  className="rounded-full border border-brass/40 bg-brass-soft/40 px-3 py-1.5 text-xs font-medium text-ink transition-colors hover:bg-brass-soft disabled:opacity-50"
+                >
+                  {text}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
       <div className="flex items-center gap-3">
         <button
-          onClick={execute}
+          onClick={() => void execute()}
           disabled={loading}
           className="inline-flex items-center gap-2 rounded-md bg-navy px-4 py-2 text-sm font-medium text-white hover:bg-ink disabled:opacity-50"
         >
@@ -92,8 +113,11 @@ export function AiServicePanel({
             action
           )}
         </button>
-        <span className="text-xs text-ink-soft">POST {endpoint}</span>
       </div>
+
+      {!result && !loading && !error && emptyMessage && (
+        <p className="text-xs text-ink-soft">{emptyMessage}</p>
+      )}
 
       {error && (
         <div className="flex items-center gap-2 rounded-md bg-alert-soft p-3 text-sm text-alert">

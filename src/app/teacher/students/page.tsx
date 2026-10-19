@@ -6,8 +6,8 @@ import { useAuth } from "@/context/AuthContext";
 import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { StatusPill } from "@/components/StatusPill";
-import { canManageStudent } from "@/lib/teacherScope";
-import { computeAreaResults, computeCertStatus } from "@/lib/grading";
+import { canManageStudent, isSubmissionOfStudent } from "@/lib/teacherScope";
+import { computeAreaResults, computeCertStatus, matchesStudentId } from "@/lib/grading";
 import { AREA_NAMES, AreaName, SubmissionStatus } from "@/lib/types";
 
 const STATUS_OPTIONS: SubmissionStatus[] = ["제출완료", "검토중", "인정완료", "반려", "재제출요청"];
@@ -32,21 +32,26 @@ export default function TeacherStudentsPage() {
     return scopedStudents
       .filter((s) => (name ? s.name.includes(name) : true))
       .map((s) => {
-        const studentSubs = submissions.filter((sub) => sub.studentId === s.id && sub.year === year?.year);
-        const studentPoints = points.filter((p) => p.studentId === s.id);
+        const studentSubs = submissions.filter((sub) => isSubmissionOfStudent(sub, s) && sub.year === year?.year);
+        const studentPoints = points.filter(
+          (p) => matchesStudentId(p.studentId, p.rawStudentId, s.id) || (s.studentId !== undefined && matchesStudentId(p.studentId, p.rawStudentId, s.studentId))
+        );
         const results =
           s.grade && year ? computeAreaResults(s.id, year.year, s.grade, year, submissions, points) : [];
-        const totalScore = results.reduce((sum, r) => sum + r.score, 0);
+        const localTotalScore = results.reduce((sum, r) => sum + r.score, 0);
+        const totalScore = studentSubs.length > 0 ? localTotalScore : (s.totalScore ?? localTotalScore);
         const hasUnderReview = studentSubs.some((sub) => ["제출완료", "검토중", "재제출요청"].includes(sub.status));
-        const certStatus = computeCertStatus(results, hasUnderReview);
-        const pending = studentSubs.filter((sub) => sub.status === "제출완료" || sub.status === "검토중").length;
-        const pointTotal = studentPoints.reduce((sum, p) => sum + p.score, 0);
+        const certStatus = studentSubs.length > 0 ? computeCertStatus(results, hasUnderReview) : (s.certStatus ?? computeCertStatus(results, hasUnderReview));
+        const localPending = studentSubs.filter((sub) => sub.status === "제출완료" || sub.status === "검토중").length;
+        const pending = studentSubs.length > 0 ? localPending : (s.pendingCount ?? localPending);
+        const localPointTotal = studentPoints.reduce((sum, p) => sum + p.score, 0);
+        const pointTotal = studentPoints.length > 0 ? localPointTotal : (s.pointTotal ?? localPointTotal);
 
         return { student: s, studentSubs, totalScore, certStatus, pending, pointTotal, studentPoints };
       })
       .filter((r) => (area ? r.studentSubs.some((sub) => sub.area === area) : true))
       .filter((r) => (status ? r.studentSubs.some((sub) => sub.status === status) : true))
-      .filter((r) => (pointsOnly ? r.studentPoints.length > 0 : true));
+      .filter((r) => (pointsOnly ? (r.studentPoints.length > 0 || r.pointTotal !== 0) : true));
   }, [scopedStudents, submissions, points, year, name, area, status, pointsOnly]);
 
   return (

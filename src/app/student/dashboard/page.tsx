@@ -75,6 +75,7 @@ export default function StudentDashboard() {
   const hasUnderReview = mySubmissions.some((s) => ["제출완료", "검토중", "재제출요청"].includes(s.status));
   const certStatus = serverStatus?.certStatus ?? computeCertStatus(results, hasUnderReview);
   const totalScore = serverStatus?.totalScore ?? results.reduce((sum, r) => sum + r.score, 0);
+  const maxTotalScore = results.reduce((sum, r) => sum + r.maxScore, 0);
   const pointTotal = serverStatus?.pointTotal ?? myPoints.reduce((sum, p) => sum + p.score, 0);
 
   const weakestArea = [...results].sort((a, b) => a.score / (a.maxScore || 1) - b.score / (b.maxScore || 1))[0];
@@ -92,7 +93,10 @@ export default function StudentDashboard() {
       <div className="record-summary mb-8">
         <div>
           <p className="text-xs text-ink-soft">총점</p>
-          <p className="mt-1.5 font-display text-3xl font-semibold text-ink">{totalScore.toFixed(1)}점</p>
+          <p className="mt-1.5 font-display text-3xl font-semibold text-ink">
+            {totalScore.toFixed(1)}점
+            {maxTotalScore > 0 && <span className="ml-1.5 text-base font-normal text-ink-soft">/ {maxTotalScore}점</span>}
+          </p>
         </div>
         <div>
           <p className="text-xs text-ink-soft">전체 인증 상태</p>

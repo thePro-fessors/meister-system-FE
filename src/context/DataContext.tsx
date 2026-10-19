@@ -89,38 +89,55 @@ interface DataContextValue {
 
 const DataContext = createContext<DataContextValue | null>(null);
 
-function mapSubmissionFromBackend(item: any): Submission {
+function mapSubmissionFromBackend(item: any, userIdByStudentId?: Map<number, string>): Submission {
+  const rawSid = Number(item.studentId ?? item.student_id);
+  const mappedUserId =
+    item.userId ??
+    item.user_id ??
+    (Number.isFinite(rawSid) && rawSid > 0 ? userIdByStudentId?.get(rawSid) : undefined);
   return {
     id: String(item.id ?? item.submissionId ?? item.submission_id),
-    studentId: String(item.studentId ?? item.student_id),
+    studentId: String(mappedUserId ?? item.studentId ?? item.student_id ?? ""),
+    rawStudentId: Number.isFinite(rawSid) && rawSid > 0 ? rawSid : undefined,
+    studentName: item.studentName ?? item.student_name,
     year: Number(item.year ?? 2026),
-    area: (item.area ?? item.area_name ?? "전공역량") as AreaName,
+    area: (item.area ?? item.areaName ?? item.area_name ?? "전공역량") as AreaName,
     itemId: String(item.itemId ?? item.item_id),
     itemName: item.itemName ?? item.item_name ?? "",
+    maxScore: item.maxScore != null ? Number(item.maxScore) : undefined,
     detail: item.detail || "",
-    activityDate: item.activityDate ?? item.activity_date ?? "",
+    activityDate: item.activityDate ? String(item.activityDate).slice(0, 10) : (item.activity_date ? String(item.activity_date).slice(0, 10) : ""),
     fileName: item.originalFilename ?? item.fileName ?? (item.filePath ? item.filePath.split("/").pop() : undefined),
+    filePath: item.filePath ?? item.fileUrl,
     fileUrl: item.fileUrl ?? item.filePath,
     link: item.linkUrl ?? item.link,
     description: item.description || "",
     status: item.status || "제출완료",
-    score: item.score != null ? Number(item.score) : undefined,
+    score: (item.score ?? item.grantedScore ?? item.granted_score) != null ? Number(item.score ?? item.grantedScore ?? item.granted_score) : undefined,
     teacherComment: item.teacherComment ?? item.teacher_comment,
-    submittedAt: item.submittedAt ? String(item.submittedAt).slice(0, 10) : new Date().toISOString().slice(0, 10),
+    submittedAt: (item.submittedAt ?? item.createdAt ?? item.created_at) ? String(item.submittedAt ?? item.createdAt ?? item.created_at).slice(0, 10) : new Date().toISOString().slice(0, 10),
     reviewedAt: item.reviewedAt ? String(item.reviewedAt).slice(0, 10) : undefined,
     reviewerId: item.reviewerId ? String(item.reviewerId) : undefined,
   };
 }
 
-function mapPointFromBackend(p: any): PointRecord {
+function mapPointFromBackend(p: any, userIdByStudentId?: Map<number, string>): PointRecord {
+  const rawSid = Number(p.studentId ?? p.student_id);
+  const mappedUserId =
+    p.userId ??
+    p.user_id ??
+    (Number.isFinite(rawSid) && rawSid > 0 ? userIdByStudentId?.get(rawSid) : undefined);
   return {
     id: String(p.id ?? p.pointId ?? p.merits_point_id),
-    studentId: String(p.studentId ?? p.student_id ?? p.userId ?? p.user_id),
-    type: p.type === "MERIT" ? "상점" : p.type === "DEMERIT" ? "벌점" : (p.type || (Number(p.score ?? p.points) < 0 ? "벌점" : "상점")),
+    studentId: String(mappedUserId ?? p.studentId ?? p.student_id ?? ""),
+    rawStudentId: Number.isFinite(rawSid) && rawSid > 0 ? rawSid : undefined,
+    studentName: p.studentName ?? p.name,
+    type: p.type === "MERIT" || p.type === "+" ? "상점" : p.type === "DEMERIT" || p.type === "-" ? "벌점" : (p.type || (Number(p.score ?? p.points) < 0 ? "벌점" : "상점")),
     score: Number(p.score ?? p.points ?? 0),
     reason: p.reason || "",
-    date: p.occurredAt ?? p.occurred_at ?? p.date ?? new Date().toISOString().slice(0, 10),
+    date: (p.occurredAt ?? p.occurred_at ?? p.date) ? String(p.occurredAt ?? p.occurred_at ?? p.date).slice(0, 10) : new Date().toISOString().slice(0, 10),
     teacherId: String(p.teacherId ?? p.teachers_id ?? ""),
+    teacherName: p.teacherName ?? p.teacher_name,
     reflected: Boolean(p.reflected ?? p.is_reflected),
     reflectedArea: p.reflectedArea ?? p.related_area ?? p.relatedArea,
     deletedAt: p.deletedAt ?? p.deleted_at,
@@ -139,6 +156,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     try {
       const token = typeof window !== "undefined" ? localStorage.getItem("meister_access_token") : null;
       if (!token) return;
+
+      const me = await authService.restore().catch(() => null);
+      const userIdByStudentId = new Map<number, string>();
+      if (me?.studentId) {
+        userIdByStudentId.set(me.studentId, me.id);
+      }
 
       // 1. 학년도 및 기준 조회
       try {
@@ -178,51 +201,95 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         // Fallback to default criteria
       }
 
-      // 2. 제출 내역 조회
-      try {
-        const subsRes = await apiClient.request<any[]>("/api/submissions", { method: "GET" });
-        if (Array.isArray(subsRes)) {
-          setSubmissions(subsRes.map(mapSubmissionFromBackend));
+      if (!me || me.role === "student") {
+        // 학생 권한: 본인 제출 내역 및 상벌점 내역만 조회 (교사 API 호출 차단하여 403 방지)
+        try {
+          const subsRes = await apiClient.request<any[]>("/api/submissions", { method: "GET" });
+          if (Array.isArray(subsRes)) {
+            setSubmissions(subsRes.map((item) => mapSubmissionFromBackend(item, userIdByStudentId)));
+          }
+        } catch {
+          // Keep existing
         }
-      } catch {
-        // Keep existing
-      }
 
-      // 3. 상벌점 내역 조회
-      try {
-        const ptsRes = await apiClient.request<any[]>("/api/points", { method: "GET" });
-        if (Array.isArray(ptsRes)) {
-          setPoints(ptsRes.map(mapPointFromBackend));
+        try {
+          const ptsRes = await apiClient.request<any[]>("/api/points", { method: "GET" });
+          if (Array.isArray(ptsRes)) {
+            setPoints(ptsRes.map((p) => mapPointFromBackend(p, userIdByStudentId)));
+          }
+        } catch {
+          // Keep existing
         }
-      } catch {
-        // Keep existing
-      }
+      } else {
+        // 교사/관리자 권한: 담당 학생 목록 조회 후 필요한 제출물 및 상벌점 조회 (파라미터 없는 400 호출 방지)
+        try {
+          const studentsRes = await apiClient.request<any[]>("/api/teacher/students", { method: "GET" });
+          if (Array.isArray(studentsRes)) {
+            const mappedUsers: User[] = studentsRes.map((st: any) => {
+              const sid = Number(st.studentId ?? st.id);
+              const uid = String(st.userId ?? st.user_id ?? st.studentId ?? st.id);
+              if (Number.isFinite(sid) && sid > 0) {
+                userIdByStudentId.set(sid, uid);
+              }
+              return {
+                id: uid,
+                studentId: Number.isFinite(sid) ? sid : undefined,
+                name: st.name,
+                role: "student",
+                grade: st.grade,
+                classNo: st.classNo ?? st.class_no,
+                number: st.number ?? st.studentNo ?? st.student_number,
+                homeroom: st.homeroom,
+                totalScore: st.totalScore != null ? Number(st.totalScore) : undefined,
+                certStatus: st.certStatus as any,
+                pendingCount: st.pendingCount != null ? Number(st.pendingCount) : undefined,
+                pointTotal: st.pointTotal != null ? Number(st.pointTotal) : undefined,
+              };
+            });
+            setUsers(mappedUsers);
 
-      // 4. 교사용 학생 목록 조회
-      try {
-        const studentsRes = await apiClient.request<any[]>("/api/teacher/students", { method: "GET" });
-        if (Array.isArray(studentsRes)) {
-          const mappedUsers: User[] = studentsRes.map((st: any) => ({
-            id: String(st.userId ?? st.user_id ?? st.studentId ?? st.id),
-            studentId: Number(st.studentId ?? st.id),
-            name: st.name,
-            role: "student",
-            grade: st.grade,
-            classNo: st.classNo ?? st.class_no,
-            number: st.number ?? st.studentNo ?? st.student_number,
-            homeroom: st.homeroom,
-          }));
-          setUsers(mappedUsers);
+            // 제출물이 있거나 대기 건수가 있는 학생들의 제출 내역 병렬 로드
+            const activeSubStudents = mappedUsers.filter(
+              (u) => u.studentId && ((u.totalScore ?? 0) > 0 || (u.pendingCount ?? 0) > 0 || u.studentId === 1)
+            );
+            const subLists = await Promise.all(
+              activeSubStudents.map((u) =>
+                apiClient
+                  .request<any[]>("/api/submissions", { method: "GET", query: { studentId: u.studentId } })
+                  .catch(() => [])
+              )
+            );
+            setSubmissions(subLists.flat().map((item) => mapSubmissionFromBackend(item, userIdByStudentId)));
+
+            // 상벌점이 있는 학생 목록 조회 후 상벌점 내역 병렬 로드
+            const pointStudentsRes = await apiClient
+              .request<any[]>("/api/teacher/students", { method: "GET", query: { hasPoints: "true" } })
+              .catch(() => []);
+            const pointStudentIds = new Set<number>(
+              [
+                ...(Array.isArray(pointStudentsRes) ? pointStudentsRes.map((s: any) => Number(s.studentId ?? s.id)) : []),
+                ...mappedUsers.filter((u) => (u.pointTotal ?? 0) !== 0).map((u) => Number(u.studentId)),
+              ].filter((n) => Number.isFinite(n) && n > 0)
+            );
+            const ptLists = await Promise.all(
+              [...pointStudentIds].map((sid) =>
+                apiClient
+                  .request<any[]>("/api/points", { method: "GET", query: { studentId: sid } })
+                  .catch(() => [])
+              )
+            );
+            setPoints(ptLists.flat().map((p) => mapPointFromBackend(p, userIdByStudentId)));
+          }
+        } catch {
+          // Not a teacher or error
         }
-      } catch {
-        // Not a teacher or no students
       }
     } catch {
       // General refresh catch
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [authService]);
 
   useEffect(() => {
     void refresh();

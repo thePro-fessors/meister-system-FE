@@ -23,6 +23,7 @@ export default function StudentSubmissionsPage() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [draft, setDraft] = useState({ detail: "", description: "", fileName: "", link: "" });
   const [replacement, setReplacement] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -31,7 +32,7 @@ export default function StudentSubmissionsPage() {
   const mine = useMemo(
     () =>
       submissions
-        .filter((s) => s.studentId === user?.id)
+        .filter((s) => s.studentId === user?.id || (user?.studentId && String(s.rawStudentId ?? s.studentId) === String(user.studentId)))
         .sort((a, b) => (a.submittedAt < b.submittedAt ? 1 : -1)),
     [submissions, user]
   );
@@ -44,6 +45,7 @@ export default function StudentSubmissionsPage() {
     setError("");
     setNotice("");
     setReplacement(null);
+    setConfirmDeleteId(null);
     setEditing(s.id);
     setDraft({ detail: s.detail, description: s.description, fileName: s.fileName ?? "", link: s.link ?? "" });
   }
@@ -57,9 +59,10 @@ export default function StudentSubmissionsPage() {
       setError("반려 또는 재제출요청 상태에서만 보완할 수 있습니다."); return;
     }
     if (!criteria.some((c) => c.year === submission.year && c.active)) { setError("비활성 학년도에는 재제출할 수 없습니다."); return; }
+    const normId = (val: string | number) => String(val).replace(/^item-/, "");
     const item = criteria.find((c) => c.year === submission.year)?.gradeCriteria
       .find((g) => g.grade === user?.grade)?.areas.find((a) => a.area === submission.area)
-      ?.items.find((i) => i.id === submission.itemId);
+      ?.items.find((i) => normId(i.id) === normId(submission.itemId) || i.name === submission.itemName);
     if (!item || item.autoCalculated) { setError("평가 기준을 확인할 수 없거나 자동연동 항목입니다. 관리자에게 문의해 주세요."); return; }
     if (replacement && replacement.size > 50 * 1024 * 1024) { setError("파일은 50MB 이하여야 합니다."); return; }
     if (!draft.detail.trim() || !draft.description.trim() || (item.requiresEvidence && !replacement && !draft.fileName.trim() && !draft.link.trim())) {
@@ -96,11 +99,11 @@ export default function StudentSubmissionsPage() {
     setError(""); setNotice("");
     const current = mine.find((s) => s.id === id);
     if (!current || current.status !== "제출완료") { setError("이미 심사 중이거나 삭제할 수 없는 건입니다. 현재 목록을 확인해 주세요."); return; }
-    if (!window.confirm(`'${current.detail}' 자료를 삭제하시겠습니까? 삭제한 자료는 복구할 수 없습니다.`)) return;
     saving.current = true; setBusy(true);
     try {
       await deleteSubmission(id, user.id);
       if (editing === id) setEditing(null);
+      setConfirmDeleteId(null);
       setNotice("제출 자료를 삭제했습니다.");
     } catch { setError("삭제하지 못했습니다. 이미 심사가 진행된 건인지 목록을 확인해 주세요."); }
     finally { saving.current = false; setBusy(false); }
@@ -191,10 +194,34 @@ export default function StudentSubmissionsPage() {
               </button>
             )}
 
-            {s.status === "제출완료" && <button
-              disabled={busy}
-              onClick={() => remove(s.id)}
-              className="ml-2 mt-3 rounded-md border border-line px-3 py-1.5 text-xs text-alert">제출 삭제</button>}
+            {s.status === "제출완료" && (
+              confirmDeleteId !== s.id ? (
+                <button
+                  disabled={busy}
+                  onClick={() => setConfirmDeleteId(s.id)}
+                  className="ml-2 mt-3 rounded-md border border-line px-3 py-1.5 text-xs text-alert hover:bg-alert-soft"
+                >
+                  제출 삭제
+                </button>
+              ) : (
+                <span className="ml-2 mt-3 inline-flex items-center gap-1.5">
+                  <button
+                    disabled={busy}
+                    onClick={() => remove(s.id)}
+                    className="rounded-md bg-alert px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
+                  >
+                    삭제 확인
+                  </button>
+                  <button
+                    disabled={busy}
+                    onClick={() => setConfirmDeleteId(null)}
+                    className="rounded-md border border-line px-3 py-1.5 text-xs text-ink-soft hover:bg-white"
+                  >
+                    취소
+                  </button>
+                </span>
+              )
+            )}
 
             {editing === s.id && (
               <div className="mt-4 space-y-3 rounded-md border border-line bg-white p-4">

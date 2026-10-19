@@ -7,6 +7,7 @@ import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { StatusPill } from "@/components/StatusPill";
 import { computeAreaResults, computeCertStatus } from "@/lib/grading";
+import { isSubmissionOfStudent } from "@/lib/teacherScope";
 import { CertStatus } from "@/lib/types";
 import { apiClient, apiErrorMessage } from "@/lib/api-client";
 
@@ -34,6 +35,7 @@ export default function AdminDashboard() {
   const students = users.filter((u) => u.role === "student");
   const [overview, setOverview] = useState<AdminOverviewData | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [showInviteModal, setShowInviteModal] = useState(false);
 
   useEffect(() => {
@@ -54,6 +56,7 @@ export default function AdminDashboard() {
 
   async function handleExport(format: "csv" | "xlsx" | "pdf") {
     setExporting(true);
+    setExportError(null);
     try {
       const blob = await apiClient.exportStats(format, year?.year);
       const url = URL.createObjectURL(blob);
@@ -65,7 +68,7 @@ export default function AdminDashboard() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (e) {
-      alert("내보내기 실패: " + apiErrorMessage(e));
+      setExportError("내보내기 실패: " + apiErrorMessage(e));
     } finally {
       setExporting(false);
     }
@@ -74,12 +77,13 @@ export default function AdminDashboard() {
   const rows = useMemo(
     () =>
       students.map((s) => {
+        const studentSubs = submissions.filter((sub) => isSubmissionOfStudent(sub, s) && sub.year === year?.year);
         const results = s.grade && year ? computeAreaResults(s.id, year.year, s.grade, year, submissions, points) : [];
-        const hasUnderReview = submissions.some(
-          (sub) => sub.studentId === s.id && sub.year === year?.year && ["제출완료", "검토중", "재제출요청"].includes(sub.status)
-        );
-        const status = computeCertStatus(results, hasUnderReview);
-        const total = results.reduce((sum, r) => sum + r.score, 0);
+        const hasUnderReview = studentSubs.some((sub) => ["제출완료", "검토중", "재제출요청"].includes(sub.status));
+        const localStatus = computeCertStatus(results, hasUnderReview);
+        const localTotal = results.reduce((sum, r) => sum + r.score, 0);
+        const status = studentSubs.length > 0 ? localStatus : (s.certStatus ?? localStatus);
+        const total = studentSubs.length > 0 ? localTotal : (s.totalScore ?? localTotal);
         return { student: s, status, total };
       }),
     [students, year, submissions, points]
@@ -144,6 +148,12 @@ export default function AdminDashboard() {
           </button>
         </div>
       </div>
+
+      {exportError && (
+        <p role="alert" className="mb-4 rounded-md bg-alert-soft px-3 py-2 text-sm text-alert">
+          {exportError}
+        </p>
+      )}
 
       <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         <div className="rounded-lg border border-line bg-paper-raised p-5">

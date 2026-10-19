@@ -13,12 +13,12 @@ export default function StudentPointsPage() {
   const mine = useMemo(
     () =>
       points
-        .filter((p) => p.studentId === user?.id || (user?.studentId && p.studentId === String(user.studentId)))
+        .filter((p) => p.studentId === user?.id || (user?.studentId && String(p.rawStudentId ?? p.studentId) === String(user.studentId)))
         .sort((a, b) => (a.date < b.date ? 1 : -1)),
     [points, user]
   );
 
-  const teacherName = (id: string) => users.find((u) => u.id === id)?.name ?? id;
+  const teacherName = (id: string) => users.find((u) => u.id === id || (u.teacherId && String(u.teacherId) === id))?.name ?? id;
   const total = mine.reduce((sum, p) => sum + p.score, 0);
 
   return (
@@ -55,7 +55,7 @@ export default function StudentPointsPage() {
                   {p.score > 0 ? `+${p.score}` : p.score}
                 </td>
                 <td className="text-ink">{p.reason}</td>
-                <td className="text-ink-soft">{teacherName(p.teacherId)}</td>
+                <td className="text-ink-soft">{p.teacherName ?? teacherName(p.teacherId)}</td>
                 <td className="text-ink-soft">
                   {p.reflected ? `반영됨 (${p.reflectedArea})` : "미반영"}
                 </td>

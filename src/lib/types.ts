@@ -25,6 +25,10 @@ export interface User {
   homeroom?: string; // 교사 담당 학급, 예: "1-2"
   teacherDuty?: TeacherDuty;
   teacherScope?: TeacherScope;
+  totalScore?: number;
+  certStatus?: CertStatus;
+  pendingCount?: number;
+  pointTotal?: number;
 }
 
 // Only the local demo data source may contain a plaintext password.
@@ -92,10 +96,13 @@ export type SubmissionStatus =
 export interface Submission {
   id: string;
   studentId: string;
+  rawStudentId?: number | string;
+  studentName?: string;
   year: number;
   area: AreaName;
   itemId: string;
   itemName: string;
+  maxScore?: number;
   detail: string; // 세부 항목 정보
   activityDate: string;
   fileName?: string;
@@ -121,11 +128,14 @@ export interface PointRecord {
   id: string;
   year?: number; // 학년도; 기존 기록은 발생일 기준 3월~다음 해 2월로 계산
   studentId: string;
+  rawStudentId?: number | string;
+  studentName?: string;
   type: PointType;
   score: number; // 상점 +, 벌점 - 로 저장
   reason: string;
   date: string;
   teacherId: string;
+  teacherName?: string;
   reflected: boolean;
   reflectedArea?: AreaName;
   editHistory?: { editorId: string; reason: string; at: string }[];
