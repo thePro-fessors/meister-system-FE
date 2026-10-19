@@ -107,11 +107,42 @@ export default function TeacherDashboard() {
         <StatCard label="권한 범위 학생 수" value={displayStudentCount} tone="brass" />
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-line bg-paper-raised">
+      <div className="space-y-3 md:hidden">
+        <div className="px-1 py-1">
+          <p className="font-display text-sm font-semibold text-ink">최근 제출 자료</p>
+        </div>
+        {displayRecent.map((s) => (
+          <article key={s.id} className="rounded-xl border border-line bg-paper-raised p-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <p className="font-semibold text-ink">{s.studentName}</p>
+                <p className="text-xs text-ink-soft">{s.area} · {s.itemName}</p>
+              </div>
+              <StatusPill label={s.status} />
+            </div>
+            <div className="mt-3 flex items-center justify-between text-xs text-ink-soft">
+              <span>제출일: {s.submittedAt || "—"}</span>
+              <Link
+                href={`/teacher/review/${s.id}`}
+                className="inline-flex min-h-11 items-center rounded-lg bg-brass-soft px-3.5 text-xs font-semibold text-brass"
+              >
+                검토하기
+              </Link>
+            </div>
+          </article>
+        ))}
+        {displayRecent.length === 0 && (
+          <p className="rounded-xl border border-line bg-paper-raised p-6 text-center text-sm text-ink-soft">
+            제출된 자료가 없습니다.
+          </p>
+        )}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-lg border border-line bg-paper-raised md:block">
         <div className="border-b border-line px-5 py-3">
           <p className="font-display text-sm font-semibold text-ink">최근 제출 자료</p>
         </div>
-        <table className="ledger-table">
+        <table className="ledger-table min-w-[560px]">
           <thead>
             <tr>
               <th>제출일</th>

@@ -32,8 +32,35 @@ export default function StudentPointsPage() {
         </span>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-line bg-paper-raised">
-        <table className="ledger-table">
+      <div className="space-y-3 md:hidden">
+        {mine.map((p) => (
+          <article key={p.id} className="rounded-xl border border-line bg-paper-raised p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div>
+                <p className="text-xs text-ink-soft">{p.date}</p>
+                <p className="mt-1 font-medium text-ink">{p.reason}</p>
+              </div>
+              <StatusPill label={p.type} />
+            </div>
+            <div className="mt-3 flex items-center justify-between text-xs text-ink-soft">
+              <span>
+                {p.teacherName ?? teacherName(p.teacherId)} · {p.reflected ? `반영됨 (${p.reflectedArea})` : "미반영"}
+              </span>
+              <span className={`font-semibold tabular-nums ${p.score < 0 ? "text-alert" : "text-certified"}`}>
+                {p.score > 0 ? `+${p.score}` : p.score}점
+              </span>
+            </div>
+          </article>
+        ))}
+        {mine.length === 0 && (
+          <p className="rounded-xl border border-line bg-paper-raised p-6 text-center text-sm text-ink-soft">
+            상벌점 내역이 없습니다.
+          </p>
+        )}
+      </div>
+
+      <div className="hidden overflow-x-auto rounded-lg border border-line bg-paper-raised md:block">
+        <table className="ledger-table min-w-[560px]">
           <thead>
             <tr>
               <th>발생일</th>

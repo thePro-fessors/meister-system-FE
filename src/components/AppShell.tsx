@@ -78,6 +78,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const menuRef = useRef<HTMLDialogElement>(null);
   const [confirmLogout, setConfirmLogout] = useState(false);
+  const [confirmMobileLogout, setConfirmMobileLogout] = useState(false);
 
   if (!user) return null;
 
@@ -219,7 +220,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main id="main-content" tabIndex={-1} className="min-w-0 flex-1">
+      <main id="main-content" tabIndex={-1} className="min-w-0 flex-1 pb-16 md:pb-0">
         <div className="app-content mx-auto max-w-6xl px-4 py-6 pb-28 sm:px-8 lg:px-12 lg:pt-12">
           {children}
         </div>
@@ -289,17 +290,39 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           ))}
         </nav>
         <div className="border-t border-line p-4">
-          <button
-            type="button"
-            disabled={pending}
-            onClick={() => {
-              if (window.confirm("로그아웃하시겠습니까?")) void logout();
-            }}
-            className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-navy-soft text-sm text-ink-soft"
-          >
-            <LogOut size={18} />
-            로그아웃
-          </button>
+          {!confirmMobileLogout ? (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => setConfirmMobileLogout(true)}
+              className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-navy-soft text-sm text-ink-soft transition-colors hover:bg-alert-soft hover:text-alert"
+            >
+              <LogOut size={18} />
+              로그아웃
+            </button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => {
+                  setConfirmMobileLogout(false);
+                  menuRef.current?.close();
+                  void logout();
+                }}
+                className="flex min-h-11 flex-1 items-center justify-center rounded-xl bg-alert text-sm font-semibold text-white hover:opacity-90"
+              >
+                로그아웃 확인
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmMobileLogout(false)}
+                className="flex min-h-11 items-center justify-center rounded-xl border border-line px-4 text-sm text-ink-soft hover:bg-paper-raised"
+              >
+                취소
+              </button>
+            </div>
+          )}
           {error && (
             <p role="alert" className="mt-2 text-sm text-alert">
               {error}

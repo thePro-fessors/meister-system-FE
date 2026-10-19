@@ -15,6 +15,17 @@ function safeLink(value: string) {
   try { return ["http:", "https:"].includes(new URL(value).protocol); } catch { return false; }
 }
 
+function decodeHtmlEntities(value?: string | null) {
+  if (!value) return "";
+  return value
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'");
+}
+
 export default function StudentSubmissionsPage() {
   const { user } = useAuth();
   const { submissions, criteria, updateSubmission, deleteSubmission } = useData();
@@ -181,7 +192,7 @@ export default function StudentSubmissionsPage() {
                     : "bg-navy-soft text-ink"
                 }`}
               >
-                교사 의견: {s.teacherComment}
+                교사 의견: {decodeHtmlEntities(s.teacherComment)}
               </div>
             )}
 
