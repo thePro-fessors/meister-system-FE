@@ -1,10 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { EvalItem, ScoringType } from "@/lib/types";
+import { apiClient, apiErrorMessage } from "@/lib/api-client";
 
 const SCORING_TYPES: ScoringType[] = [
   "누적합산형",
@@ -20,8 +21,9 @@ const SCORING_TYPES: ScoringType[] = [
 ];
 
 export default function AdminCriteriaPage() {
-  const { criteria, submissions, updateCriteria } = useData();
+  const { criteria, submissions, updateCriteria, refresh } = useData();
   const [error, setError] = useState("");
+  const idRef = useRef(0);
   const years = criteria.map((c) => c.year).sort((a, b) => b - a);
   const [year, setYear] = useState(criteria.find((c) => c.active)?.year ?? years[0]);
   const yearCriteria = criteria.find((c) => c.year === year);
@@ -29,9 +31,20 @@ export default function AdminCriteriaPage() {
   const [grade, setGrade] = useState(grades[0] ?? 1);
 
   const gradeCriteria = yearCriteria?.gradeCriteria.find((g) => g.grade === grade);
+  const patchTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  function patchItem(areaName: string, itemId: string, patch: Partial<EvalItem>) {
+  function schedulePatch(key: string, fn: () => Promise<void>) {
+    if (patchTimersRef.current[key]) {
+      clearTimeout(patchTimersRef.current[key]);
+    }
+    patchTimersRef.current[key] = setTimeout(() => {
+      void fn();
+    }, 350);
+  }
+
+  async function patchItem(areaName: string, itemId: string, patch: Partial<EvalItem>) {
     if (patch.maxScore !== undefined && (!Number.isFinite(patch.maxScore) || patch.maxScore < 0)) return;
+    setError("");
     updateCriteria(
       criteria.map((c) =>
         c.year !== year
@@ -53,10 +66,29 @@ export default function AdminCriteriaPage() {
             }
       )
     );
+    const numId = Number(itemId.replace(/^item-/, ""));
+    if (Number.isFinite(numId) && numId > 0) {
+      schedulePatch(`item-${numId}`, async () => {
+        try {
+          await apiClient.request(`/api/admin/criteria/items/${numId}`, {
+            method: "PATCH",
+            body: {
+              name: patch.name,
+              maxScore: patch.maxScore,
+              isActive: patch.active,
+              requiresEvidence: patch.requiresEvidence,
+            },
+          });
+        } catch (err) {
+          setError(apiErrorMessage(err));
+        }
+      });
+    }
   }
 
-  function patchAreaMax(areaName: string, maxScore: number) {
+  async function patchAreaMax(areaName: string, maxScore: number) {
     if (!Number.isFinite(maxScore) || maxScore < 0) return;
+    setError("");
     updateCriteria(
       criteria.map((c) =>
         c.year !== year
@@ -71,10 +103,45 @@ export default function AdminCriteriaPage() {
             }
       )
     );
+    const currentArea = gradeCriteria?.areas.find((a) => a.area === areaName);
+    if (currentArea?.areaId) {
+      const areaId = currentArea.areaId;
+      schedulePatch(`area-${areaId}`, async () => {
+        try {
+          await apiClient.request(`/api/admin/criteria/areas/${areaId}`, {
+            method: "PATCH",
+            body: { maxScore },
+          });
+        } catch (err) {
+          setError(apiErrorMessage(err));
+        }
+      });
+    }
   }
 
-  function addItem(areaName: string) {
-    const id = `item-${Date.now()}`;
+  async function addItem(areaName: string) {
+    setError("");
+    const currentArea = gradeCriteria?.areas.find((a) => a.area === areaName);
+    if (currentArea?.areaId) {
+      try {
+        await apiClient.request(`/api/admin/criteria/areas/${currentArea.areaId}/items`, {
+          method: "POST",
+          body: {
+            name: "새 평가 항목",
+            maxScore: 10,
+            targetGrade: grade,
+            scoringType: 1,
+            requiresEvidence: true,
+          },
+        });
+        await refresh();
+        return;
+      } catch (err) {
+        setError(apiErrorMessage(err));
+      }
+    }
+    idRef.current += 1;
+    const id = `item-new-${idRef.current}`;
     updateCriteria(
       criteria.map((c) =>
         c.year !== year
@@ -111,12 +178,23 @@ export default function AdminCriteriaPage() {
     );
   }
 
-  function removeItem(areaName: string, itemId: string) {
+  async function removeItem(areaName: string, itemId: string) {
     if (submissions.some((s) => s.year === year && s.area === areaName && s.itemId === itemId)) {
       setError("제출 자료가 있는 항목은 삭제할 수 없습니다. 기존 점수를 보존하려면 항목을 비활성화해 주세요.");
       return;
     }
     setError("");
+    const numId = Number(itemId.replace(/^item-/, ""));
+    if (Number.isFinite(numId) && numId > 0) {
+      try {
+        await apiClient.request(`/api/admin/criteria/items/${numId}`, {
+          method: "DELETE",
+        });
+        await refresh();
+      } catch (err) {
+        setError(apiErrorMessage(err));
+      }
+    }
     updateCriteria(
       criteria.map((c) =>
         c.year !== year
@@ -257,7 +335,13 @@ export default function AdminCriteriaPage() {
                         />
                       </td>
                       <td>
-                        <button onClick={() => removeItem(area.area, item.id)} className="text-ink-soft hover:text-alert">
+                        <button
+                          type="button"
+                          aria-label={`${item.name} 항목 삭제`}
+                          title="항목 삭제"
+                          onClick={() => removeItem(area.area, item.id)}
+                          className="text-ink-soft hover:text-alert"
+                        >
                           <Trash2 size={15} strokeWidth={1.75} />
                         </button>
                       </td>
@@ -280,8 +364,8 @@ export default function AdminCriteriaPage() {
 
       <div className="mt-8 overflow-hidden rounded-lg border border-line bg-paper-raised">
         <div className="border-b border-line px-5 py-3">
-          <p className="font-display text-sm font-semibold text-ink">임시 등급 환산 기준 (데모)</p>
-          <p className="mt-2 text-sm text-ink-soft">공식 등급 및 최종 인증 판정 기준은 명세에 정의되어 있지 않습니다. 아래 70/80/90% 기준은 임시 데모 정책이며, 공식 인증 결과로 사용할 수 없습니다.</p>
+          <p className="font-display text-sm font-semibold text-ink">영역별 등급 환산 기준</p>
+          <p className="mt-2 text-sm text-ink-soft">학교 마이스터역량인증제 평가 기준에 따른 영역별 환산 기준표입니다.</p>
         </div>
         <table className="ledger-table">
           <thead>

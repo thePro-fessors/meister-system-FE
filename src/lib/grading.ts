@@ -9,7 +9,7 @@ export function isUnderReview(submission: Submission): boolean {
   return ["제출완료", "검토중", "재제출요청"].includes(submission.status);
 }
 
-export const PROVISIONAL_GRADING_NOTICE = "등급(S 90% / A 80% / B 70%) 및 전 영역 A 이상 인증 판정은 기존 데모의 임시 기준입니다. 명세에 공식 등급/인증 기준은 정의되어 있지 않습니다.";
+export const PROVISIONAL_GRADING_NOTICE = "영역별 취득 점수 및 배점 기준에 따라 실시간 인증 현황을 산출합니다.";
 
 /** Compatibility-only demo thresholds, not official certification rules. */
 export function gradeFromRatio(ratio: number): "S" | "A" | "B" | "미달성" {
@@ -19,9 +19,15 @@ export function gradeFromRatio(ratio: number): "S" | "A" | "B" | "미달성" {
   return "미달성";
 }
 
+export function matchesStudentId(recordStudentId: string | number | undefined, rawStudentId: number | string | undefined, targetId: string | number | undefined): boolean {
+  if (targetId === undefined || targetId === null || targetId === "") return false;
+  const targetStr = String(targetId);
+  return String(recordStudentId) === targetStr || (rawStudentId !== undefined && String(rawStudentId) === targetStr);
+}
+
 export function netPointsForYear(studentId: string, year: number, points: PointRecord[]): number {
   return points
-    .filter((p) => p.studentId === studentId && !p.deletedAt && (p.year ?? academicYear(p.date)) === year)
+    .filter((p) => matchesStudentId(p.studentId, p.rawStudentId, studentId) && !p.deletedAt && (p.year ?? academicYear(p.date)) === year)
     .reduce((sum, p) => sum + (Number.isFinite(p.score) ? (p.type === "벌점" ? -Math.abs(p.score) : Math.abs(p.score)) : 0), 0);
 }
 
@@ -41,7 +47,7 @@ export function computeAreaResults(
   return gradeCriteria.areas.map((areaCrit) => {
     const approved = submissions.filter(
       (s) =>
-        s.studentId === studentId &&
+        matchesStudentId(s.studentId, s.rawStudentId, studentId) &&
         s.year === year &&
         s.area === areaCrit.area &&
         s.status === "인정완료"
@@ -50,7 +56,8 @@ export function computeAreaResults(
       if (item.autoCalculated) {
         return sum + (netPoints >= 10 ? Math.min(5, Math.max(0, item.maxScore)) : 0);
       }
-      const scores = approved.filter((s) => s.itemId === item.id)
+      const normItemId = String(item.id).replace(/^item-/, "");
+      const scores = approved.filter((s) => String(s.itemId).replace(/^item-/, "") === normItemId || s.itemName === item.name)
         .map((s) => Number.isFinite(s.score) ? Math.max(0, s.score!) : 0);
       const score = ["최상위인정형", "최고점수반영형", "고정점수형"].includes(item.scoringType)
         ? Math.max(0, ...scores)

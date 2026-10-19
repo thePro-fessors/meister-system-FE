@@ -134,7 +134,7 @@ export function answerStudentQuestion(rawInput: string, ctx: ChatbotContext): Bo
   // 인증 상태 의미
   if (includesAny(text, ["인증 상태", "인증 가능", "인증이 뭐야", "검토중이 뭐야", "보완 필요가 뭐야"])) {
     return {
-      text: `${PROVISIONAL_GRADING_NOTICE}\n현재 표시되는 인증 가능/보완 필요/검토중/미달성은 데모 참고 상태이며 공식 인증 판정이 아닙니다.`,
+      text: `${PROVISIONAL_GRADING_NOTICE}\n현재 인증 상태는 제출 및 승인 완료된 증빙자료와 상벌점을 종합하여 실시간으로 계산된 결과입니다.`,
       suggestions: ["내 총점 알려줘"],
     };
   }

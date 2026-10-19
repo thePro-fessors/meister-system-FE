@@ -7,6 +7,7 @@ import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { StatusPill } from "@/components/StatusPill";
 import { Submission, SubmissionStatus } from "@/lib/types";
+import { downloadSubmissionFile } from "@/lib/api-client";
 
 const STATUSES: SubmissionStatus[] = ["제출완료", "검토중", "인정완료", "반려", "재제출요청"];
 
@@ -22,6 +23,7 @@ export default function StudentSubmissionsPage() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [draft, setDraft] = useState({ detail: "", description: "", fileName: "", link: "" });
   const [replacement, setReplacement] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -30,7 +32,7 @@ export default function StudentSubmissionsPage() {
   const mine = useMemo(
     () =>
       submissions
-        .filter((s) => s.studentId === user?.id)
+        .filter((s) => s.studentId === user?.id || (user?.studentId && String(s.rawStudentId ?? s.studentId) === String(user.studentId)))
         .sort((a, b) => (a.submittedAt < b.submittedAt ? 1 : -1)),
     [submissions, user]
   );
@@ -43,6 +45,7 @@ export default function StudentSubmissionsPage() {
     setError("");
     setNotice("");
     setReplacement(null);
+    setConfirmDeleteId(null);
     setEditing(s.id);
     setDraft({ detail: s.detail, description: s.description, fileName: s.fileName ?? "", link: s.link ?? "" });
   }
@@ -56,9 +59,10 @@ export default function StudentSubmissionsPage() {
       setError("반려 또는 재제출요청 상태에서만 보완할 수 있습니다."); return;
     }
     if (!criteria.some((c) => c.year === submission.year && c.active)) { setError("비활성 학년도에는 재제출할 수 없습니다."); return; }
+    const normId = (val: string | number) => String(val).replace(/^item-/, "");
     const item = criteria.find((c) => c.year === submission.year)?.gradeCriteria
       .find((g) => g.grade === user?.grade)?.areas.find((a) => a.area === submission.area)
-      ?.items.find((i) => i.id === submission.itemId);
+      ?.items.find((i) => normId(i.id) === normId(submission.itemId) || i.name === submission.itemName);
     if (!item || item.autoCalculated) { setError("평가 기준을 확인할 수 없거나 자동연동 항목입니다. 관리자에게 문의해 주세요."); return; }
     if (replacement && replacement.size > 50 * 1024 * 1024) { setError("파일은 50MB 이하여야 합니다."); return; }
     if (!draft.detail.trim() || !draft.description.trim() || (item.requiresEvidence && !replacement && !draft.fileName.trim() && !draft.link.trim())) {
@@ -76,20 +80,16 @@ export default function StudentSubmissionsPage() {
     saving.current = true;
     setBusy(true);
     try {
-    await updateSubmission(id, {
-      detail: draft.detail.trim(),
-      description: draft.description.trim(),
-      fileName: replacement?.name ?? (draft.fileName || undefined),
-      link: draft.link.trim() || undefined,
-      status: "제출완료",
-      teacherComment: undefined,
-      score: undefined,
-      reviewerId: undefined,
-      reviewedAt: undefined,
-      submittedAt: new Date().toISOString().slice(0, 10),
-    });
-    setEditing(null);
-    setNotice("보완 자료를 제출완료 상태로 등록했습니다 (로컬 데모).");
+      await updateSubmission(id, {
+        detail: draft.detail.trim(),
+        description: draft.description.trim(),
+        fileName: replacement?.name ?? (draft.fileName || undefined),
+        link: draft.link.trim() || undefined,
+        status: "제출완료",
+        file: replacement || undefined,
+      } as any);
+      setEditing(null);
+      setNotice("보완 자료를 성공적으로 재제출했습니다.");
     } catch { setError("재제출하지 못했습니다. 다시 시도해 주세요."); }
     finally { saving.current = false; setBusy(false); }
   }
@@ -99,13 +99,13 @@ export default function StudentSubmissionsPage() {
     setError(""); setNotice("");
     const current = mine.find((s) => s.id === id);
     if (!current || current.status !== "제출완료") { setError("이미 심사 중이거나 삭제할 수 없는 건입니다. 현재 목록을 확인해 주세요."); return; }
-    if (!window.confirm(`'${current.detail}' 자료를 삭제하시겠습니까? 삭제한 자료는 복구할 수 없습니다.`)) return;
     saving.current = true; setBusy(true);
     try {
       await deleteSubmission(id, user.id);
       if (editing === id) setEditing(null);
-      setNotice("제출 자료를 삭제했습니다 (로컬 데모).");
-    } catch { setError("삭제하지 못했습니다. 이미 심사 중인 건인지 목록을 확인해 주세요."); }
+      setConfirmDeleteId(null);
+      setNotice("제출 자료를 삭제했습니다.");
+    } catch { setError("삭제하지 못했습니다. 이미 심사가 진행된 건인지 목록을 확인해 주세요."); }
     finally { saving.current = false; setBusy(false); }
   }
 
@@ -153,8 +153,17 @@ export default function StudentSubmissionsPage() {
 
             <div className="mt-3 flex flex-wrap gap-3 text-xs text-ink-soft">
               {s.fileName && (
-                <button type="button" onClick={() => setNotice("로컬 데모에는 파일명만 저장되어 원본 다운로드와 1회용 티켓 발급을 제공하지 않습니다.")} className="inline-flex items-center gap-1 text-left">
-                  <FileText size={13} strokeWidth={1.75} /> {s.fileName} · 다운로드 불가 (데모)
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setNotice("다운로드 티켓을 발급받는 중입니다...");
+                    const res = await downloadSubmissionFile(s.id, s.fileUrl);
+                    if (!res.ok) setNotice(res.message || "파일 다운로드에 실패했습니다.");
+                    else setNotice("파일 다운로드가 시작되었습니다.");
+                  }}
+                  className="inline-flex items-center gap-1 text-left text-brass hover:underline cursor-pointer"
+                >
+                  <FileText size={13} strokeWidth={1.75} /> {s.fileName} · 증빙자료 다운로드
                 </button>
               )}
               {s.link && (
@@ -185,10 +194,34 @@ export default function StudentSubmissionsPage() {
               </button>
             )}
 
-            {s.status === "제출완료" && <button
-              disabled={busy}
-              onClick={() => remove(s.id)}
-              className="ml-2 mt-3 rounded-md border border-line px-3 py-1.5 text-xs text-alert">제출 삭제</button>}
+            {s.status === "제출완료" && (
+              confirmDeleteId !== s.id ? (
+                <button
+                  disabled={busy}
+                  onClick={() => setConfirmDeleteId(s.id)}
+                  className="ml-2 mt-3 rounded-md border border-line px-3 py-1.5 text-xs text-alert hover:bg-alert-soft"
+                >
+                  제출 삭제
+                </button>
+              ) : (
+                <span className="ml-2 mt-3 inline-flex items-center gap-1.5">
+                  <button
+                    disabled={busy}
+                    onClick={() => remove(s.id)}
+                    className="rounded-md bg-alert px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"
+                  >
+                    삭제 확인
+                  </button>
+                  <button
+                    disabled={busy}
+                    onClick={() => setConfirmDeleteId(null)}
+                    className="rounded-md border border-line px-3 py-1.5 text-xs text-ink-soft hover:bg-white"
+                  >
+                    취소
+                  </button>
+                </span>
+              )
+            )}
 
             {editing === s.id && (
               <div className="mt-4 space-y-3 rounded-md border border-line bg-white p-4">
@@ -200,7 +233,7 @@ export default function StudentSubmissionsPage() {
                   rows={3}
                   className="w-full rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-brass focus:ring-1 focus:ring-brass"
                 />
-                <p className="text-xs text-ink-soft">기존 파일: {draft.fileName || "없음"}. 교체하지 않으면 기존 파일명을 유지합니다. 최대 50MB, 파일명만 저장되며 실제 업로드하지 않습니다.</p>
+                <p className="text-xs text-ink-soft">기존 파일: {draft.fileName || "없음"}. 교체하지 않으면 기존 파일이 유지됩니다. (최대 50MB)</p>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <input
                     type="file"

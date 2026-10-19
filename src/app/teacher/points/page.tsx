@@ -2,7 +2,7 @@
 
 import StudentCombobox from "@/components/StudentCombobox";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pencil, Plus } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useData } from "@/context/DataContext";
@@ -11,8 +11,9 @@ import { StatusPill } from "@/components/StatusPill";
 import { canManageStudent } from "@/lib/teacherScope";
 import { canModifyPoint, validPointMagnitude } from "@/lib/point-actions";
 import { PointType } from "@/lib/types";
-import { academicYear } from "@/lib/grading";
+import { academicYear, matchesStudentId } from "@/lib/grading";
 import { DeletePointButton } from "@/components/DeletePointButton";
+import { apiErrorMessage } from "@/lib/api-client";
 
 export default function TeacherPointsPage() {
   const { user } = useAuth();
@@ -34,14 +35,24 @@ export default function TeacherPointsPage() {
   const [editReason, setEditReason] = useState("");
   const [editScore, setEditScore] = useState(0);
 
-  const scopedIds = new Set(scopedStudents.map((s) => s.id));
+  useEffect(() => {
+    if (!studentId && scopedStudents.length > 0) {
+      setStudentId(scopedStudents[0].id);
+    }
+  }, [scopedStudents, studentId]);
+
+  const scopedIds = new Set(scopedStudents.flatMap((s) => [s.id, ...(s.studentId !== undefined ? [String(s.studentId)] : [])]));
   const list = points
-    .filter((p) => scopedIds.has(p.studentId))
+    .filter((p) => scopedIds.has(p.studentId) || (p.rawStudentId !== undefined && scopedIds.has(String(p.rawStudentId))))
     .sort((a, b) => (a.date < b.date ? 1 : -1));
 
-  const studentName = (id: string) => users.find((u) => u.id === id)?.name ?? id;
+  const findStudent = (pStudentId: string, rawId?: string | number) =>
+    users.find((u) => matchesStudentId(pStudentId, rawId, u.id) || (u.studentId !== undefined && matchesStudentId(pStudentId, rawId, u.studentId)));
 
-  function submit(e: React.FormEvent) {
+  const studentName = (pStudentId: string, rawId?: string | number, fallbackName?: string) =>
+    findStudent(pStudentId, rawId)?.name ?? fallbackName ?? pStudentId;
+
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!reason.trim()) {
       setFormError("상벌점 부여 사유를 입력해 주세요.");
@@ -56,19 +67,23 @@ export default function TeacherPointsPage() {
       return;
     }
     setFormError(null);
-    addPoint({
-      id: `pt-${Date.now()}`,
-      studentId,
-      type,
-      score: type === "상점" ? Math.abs(score) : -Math.abs(score),
-      reason,
-      date,
-      year: academicYear(date),
-      teacherId: user!.id,
-      reflected: false,
-    });
-    setReason("");
-    setScore(1);
+    try {
+      await addPoint({
+        id: `pt-${Date.now()}`,
+        studentId,
+        type,
+        score: type === "상점" ? Math.abs(score) : -Math.abs(score),
+        reason,
+        date,
+        year: academicYear(date),
+        teacherId: user!.id,
+        reflected: false,
+      });
+      setReason("");
+      setScore(1);
+    } catch (cause) {
+      setFormError(apiErrorMessage(cause));
+    }
   }
 
   function startEdit(id: string, currentScore: number) {
@@ -77,21 +92,25 @@ export default function TeacherPointsPage() {
     setEditReason("");
   }
 
-  function saveEdit(id: string, type: PointType) {
+  async function saveEdit(id: string, type: PointType) {
     const point = list.find((p) => p.id === id);
-    const student = users.find((u) => u.id === point?.studentId);
+    const student = point ? findStudent(point.studentId, point.rawStudentId) : undefined;
     if (!user || !point || !student || !canModifyPoint(user, point, student) || !editReason.trim() || !validPointMagnitude(editScore)) {
       setFormError("수정 권한, 사유와 1~5의 정수 점수를 확인해 주세요.");
       return;
     }
     setFormError(null);
-    try { updatePoint(
-      id,
-      { score: type === "상점" ? Math.abs(editScore) : -Math.abs(editScore) },
-      user!.id,
-      editReason
-    ); } catch (cause) { setFormError(cause instanceof Error ? cause.message : "수정하지 못했습니다."); return; }
-    setEditingId(null);
+    try {
+      await updatePoint(
+        id,
+        { score: type === "상점" ? Math.abs(editScore) : -Math.abs(editScore) },
+        user!.id,
+        editReason
+      );
+      setEditingId(null);
+    } catch (cause) {
+      setFormError(apiErrorMessage(cause));
+    }
   }
 
   return (
@@ -173,10 +192,13 @@ export default function TeacherPointsPage() {
             </tr>
           </thead>
           <tbody>
-            {list.map((p) => (
+            {list.map((p) => {
+              const targetStudent = findStudent(p.studentId, p.rawStudentId);
+              const canEdit = !!user && !!targetStudent && canModifyPoint(user, p, targetStudent);
+              return (
               <tr key={p.id}>
                 <td className="text-ink-soft">{p.date}</td>
-                <td className="font-medium text-ink">{studentName(p.studentId)}</td>
+                <td className="font-medium text-ink">{studentName(p.studentId, p.rawStudentId, p.studentName)}</td>
                 <td>
                   <StatusPill label={p.type} />
                 </td>
@@ -195,7 +217,7 @@ export default function TeacherPointsPage() {
                       {p.score > 0 ? `+${p.score}` : p.score}
                     </span>
                   )}
-                  {user && users.some((s) => s.id === p.studentId && canModifyPoint(user, p, s)) && <DeletePointButton id={p.id} />}
+                  {canEdit && <DeletePointButton id={p.id} />}
                 </td>
                 <td className="text-ink">{p.reason}</td>
                 <td className="text-ink-soft">순상점 자동 산정</td>
@@ -217,16 +239,17 @@ export default function TeacherPointsPage() {
                     </div>
                   ) : (
                     <button
-                      disabled={!user || !users.some((s) => s.id === p.studentId && canModifyPoint(user, p, s))}
+                      disabled={!canEdit}
                       onClick={() => startEdit(p.id, p.score)}
-                      className="inline-flex items-center gap-1 text-xs text-ink-soft hover:text-ink"
+                      className="inline-flex items-center gap-1 text-xs text-ink-soft hover:text-ink disabled:opacity-40"
                     >
                       <Pencil size={13} strokeWidth={1.75} /> 수정
                     </button>
                   )}
                 </td>
               </tr>
-            ))}
+              );
+            })}
             {list.length === 0 && (
               <tr>
                 <td colSpan={7} className="py-8 text-center text-ink-soft">

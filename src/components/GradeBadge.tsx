@@ -7,13 +7,16 @@ const STYLES: Record<string, string> = {
 
 export function GradeBadge({ grade }: { grade: string }) {
   const style = STYLES[grade] ?? "bg-navy-soft text-ink-soft border-line";
+  const isUnachieved = grade === "미달성";
   return (
     <span
       aria-label={`등급: ${grade}`}
       title={grade}
-      className={`inline-flex h-8 w-8 items-center justify-center rounded-lg border font-display text-sm font-semibold ${style}`}
+      className={`inline-flex h-8 min-w-8 items-center justify-center rounded-lg border px-2 font-display font-semibold ${
+        isUnachieved ? "text-xs" : "text-sm"
+      } ${style}`}
     >
-      {grade === "미달성" ? "-" : grade}
+      {grade}
     </span>
   );
 }

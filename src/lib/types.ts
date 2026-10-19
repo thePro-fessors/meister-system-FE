@@ -16,6 +16,8 @@ export interface User {
   studentId?: number;
   teacherId?: number;
   name: string;
+  email?: string;
+  schoolEmail?: string;
   role: Role;
   grade?: number; // 학생
   classNo?: number; // 학생
@@ -23,6 +25,10 @@ export interface User {
   homeroom?: string; // 교사 담당 학급, 예: "1-2"
   teacherDuty?: TeacherDuty;
   teacherScope?: TeacherScope;
+  totalScore?: number;
+  certStatus?: CertStatus;
+  pendingCount?: number;
+  pointTotal?: number;
 }
 
 // Only the local demo data source may contain a plaintext password.
@@ -65,6 +71,7 @@ export interface EvalItem {
 }
 
 export interface AreaCriteria {
+  areaId?: number;
   area: AreaName;
   maxScore: number;
   items: EvalItem[];
@@ -89,13 +96,18 @@ export type SubmissionStatus =
 export interface Submission {
   id: string;
   studentId: string;
+  rawStudentId?: number | string;
+  studentName?: string;
   year: number;
   area: AreaName;
   itemId: string;
   itemName: string;
+  maxScore?: number;
   detail: string; // 세부 항목 정보
   activityDate: string;
   fileName?: string;
+  filePath?: string;
+  fileUrl?: string;
   link?: string;
   description: string;
   status: SubmissionStatus;
@@ -116,11 +128,14 @@ export interface PointRecord {
   id: string;
   year?: number; // 학년도; 기존 기록은 발생일 기준 3월~다음 해 2월로 계산
   studentId: string;
+  rawStudentId?: number | string;
+  studentName?: string;
   type: PointType;
   score: number; // 상점 +, 벌점 - 로 저장
   reason: string;
   date: string;
   teacherId: string;
+  teacherName?: string;
   reflected: boolean;
   reflectedArea?: AreaName;
   editHistory?: { editorId: string; reason: string; at: string }[];
@@ -128,11 +143,13 @@ export interface PointRecord {
 
 export type CertStatus = "인증 가능" | "미달성" | "검토중" | "보완 필요";
 
+export type GradeLevel = "S" | "A" | "B" | "미달성";
+
 export interface AreaResult {
   gradingPolicy?: "provisional";
   area: AreaName;
   score: number;
   maxScore: number;
-  grade: "S" | "A" | "B" | "미달성";
+  grade: GradeLevel;
   status: "충족" | "보완 필요";
 }

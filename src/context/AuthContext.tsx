@@ -18,7 +18,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const { authService } = useData();
+  const { authService, refresh } = useData();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState(false);
@@ -53,6 +53,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const found = await authService.login({ username: id.trim(), password });
       if (request !== generation.current) return { ok: false };
       setUser(found);
+      await refresh();
       return { ok: true };
     } catch (cause) {
       const message = cause instanceof AuthError ? cause.message : "로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.";

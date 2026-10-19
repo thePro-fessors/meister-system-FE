@@ -1,53 +1,183 @@
 "use client";
 
-import { use, useRef, useState } from "react";
+import { use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, FileText, Link as LinkIcon } from "lucide-react";
+import { ArrowLeft, FileText, Link as LinkIcon, Sparkles } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { StatusPill } from "@/components/StatusPill";
-import { canManageStudent, canReviewSubmission } from "@/lib/teacherScope";
-import { computeAreaResults } from "@/lib/grading";
+import { canManageStudent, canReviewSubmission, isSubmissionOfStudent } from "@/lib/teacherScope";
+import { academicYear, computeAreaResults, matchesStudentId } from "@/lib/grading";
+import { apiClient, apiErrorMessage, downloadSubmissionFile } from "@/lib/api-client";
+import { Submission, User } from "@/lib/types";
 
 export default function ReviewPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const { user } = useAuth();
   const { users, submissions, points, criteria, updateSubmission } = useData();
+  const [remoteSubmission, setRemoteSubmission] = useState<Submission | null>(null);
+  const [remoteStudent, setRemoteStudent] = useState<User | null>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
 
-  const submission = submissions.find((s) => s.id === id);
-  const student = users.find((u) => u.id === submission?.studentId);
+  const localSubmission = submissions.find(
+    (s) => s.id === id || String(s.id).replace(/^sub-/, "") === id.replace(/^sub-/, "")
+  );
+  const submission = localSubmission ?? remoteSubmission ?? undefined;
+
+  useEffect(() => {
+    let ignore = false;
+    const rawId = id.replace(/^sub-/, "");
+    setLoadingDetail(true);
+    apiClient
+      .request<any>(`/api/submissions/${rawId}`)
+      .then((s) => {
+        if (ignore || !s) return;
+        const actDate = s.activityDate || s.activity_date || (s.createdAt ? String(s.createdAt).slice(0, 10) : new Date().toISOString().slice(0, 10));
+        const rawStudentId = String(s.studentId ?? s.student_id ?? "");
+        const matchedUser = users.find((u) => u.id === rawStudentId || (u.studentId !== undefined && String(u.studentId) === rawStudentId));
+        const mappedSub: Submission = {
+          id: String(s.id ?? s.submission_id ?? rawId),
+          studentId: matchedUser ? matchedUser.id : rawStudentId,
+          rawStudentId,
+          studentName: s.studentName ?? s.student_name ?? matchedUser?.name,
+          year: s.year || academicYear(actDate),
+          area: s.areaName || s.area || s.area_name || "전공",
+          itemId: String(s.itemId ?? s.item_id ?? ""),
+          itemName: s.itemName || s.item_name || "항목",
+          detail: s.detail || s.title || "",
+          activityDate: actDate,
+          description: s.description || s.content || "",
+          fileName: s.originalFilename || s.fileName || s.original_filename || undefined,
+          filePath: s.filePath || s.file_path || undefined,
+          fileUrl: s.fileUrl || s.file_url || undefined,
+          link: s.linkUrl || s.link || s.link_url || undefined,
+          status: s.status || "제출완료",
+          score: s.grantedScore !== null && s.grantedScore !== undefined ? Number(s.grantedScore) : (s.score !== null && s.score !== undefined ? Number(s.score) : undefined),
+          maxScore: s.maxScore !== null && s.maxScore !== undefined ? Number(s.maxScore) : undefined,
+          teacherComment: s.teacherComment || s.teacher_comment || undefined,
+          submittedAt: s.submittedAt ? String(s.submittedAt).slice(0, 10) : (s.createdAt ? String(s.createdAt).slice(0, 10) : actDate),
+          reviewedAt: s.reviewedAt ? String(s.reviewedAt).slice(0, 10) : undefined,
+          reviewerId: s.reviewerId ? String(s.reviewerId) : undefined,
+        };
+        setRemoteSubmission(mappedSub);
+        if (!matchedUser && (s.studentName || s.grade)) {
+          setRemoteStudent({
+            id: rawStudentId,
+            studentId: Number(rawStudentId) || undefined,
+            name: s.studentName || "학생",
+            role: "student",
+            grade: (Number(s.grade) || 1) as 1 | 2 | 3,
+            classNo: Number(s.classNo) || 1,
+            number: Number(s.number) || 1,
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!ignore) setLoadingDetail(false);
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [id, users]);
+
+  const student =
+    users.find(
+      (u) =>
+        u.role === "student" &&
+        submission &&
+        isSubmissionOfStudent(submission, u)
+    ) ?? remoteStudent ?? undefined;
+
   const canReview = !!user && !!student && !!submission && canReviewSubmission(user, student, submission);
-  const year = criteria.find((c) => c.year === submission?.year);
+  const year = criteria.find((c) => c.year === submission?.year) ?? criteria.find((c) => c.active) ?? criteria[0];
+  const normId = (v: string | number) => String(v).replace(/^item-/, "");
   const item = year?.gradeCriteria
     .find((g) => g.grade === student?.grade)
     ?.areas.find((a) => a.area === submission?.area)
-    ?.items.find((i) => i.id === submission?.itemId);
+    ?.items.find((i) => normId(i.id) === normId(submission?.itemId ?? "") || i.name === submission?.itemName);
 
-  const [scoreInput, setScoreInput] = useState(submission?.score?.toString() ?? item?.maxScore.toString() ?? "");
+  const [scoreInput, setScoreInput] = useState(submission?.score?.toString() ?? item?.maxScore.toString() ?? submission?.maxScore?.toString() ?? "");
   const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<"approve" | "reject">("approve");
   const [rejectStatus, setRejectStatus] = useState<"반려" | "재제출요청">("반려");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiDraftInfo, setAiDraftInfo] = useState<{
+    guideline?: string;
+    checkPoints?: string[];
+    confidence?: number;
+  } | null>(null);
   const saving = useRef(false);
+
+  useEffect(() => {
+    if (!scoreInput && (submission?.score !== undefined || item?.maxScore !== undefined || submission?.maxScore !== undefined)) {
+      setScoreInput(String(submission?.score ?? item?.maxScore ?? submission?.maxScore ?? ""));
+    }
+  }, [submission?.score, submission?.maxScore, item?.maxScore, scoreInput]);
 
   const alreadyApproved = submission?.status === "인정완료";
   const pending = submission?.status === "제출완료" || submission?.status === "검토중";
-  const editable = !!item && !item.autoCalculated && !!year?.active && (pending || alreadyApproved) && !!user && !!student && !!submission && canReviewSubmission(user, student, submission, alreadyApproved);
+  const editable = (!item || !item.autoCalculated) && (!year || !!year.active) && (pending || alreadyApproved) && !!user && !!student && !!submission && canReviewSubmission(user, student, submission, alreadyApproved);
   let evidenceLink: string | undefined;
   try {
     const url = new URL(submission?.link?.trim() ?? "");
     if (["http:", "https:"].includes(url.protocol)) evidenceLink = url.href;
   } catch { /* Legacy demo links may not be valid URLs. */ }
 
-  const maxScore = item?.maxScore ?? 0;
+  const maxScore = item?.maxScore ?? submission?.maxScore ?? 100;
+
+  async function requestAiDraft() {
+    if (!submission) return;
+    setAiLoading(true);
+    setError(null);
+    try {
+      const numId = Number(submission.id.replace(/^sub-/, ""));
+      const res = await apiClient.request<{
+        recommendedStatus?: string;
+        recommendedScore?: number;
+        score?: number;
+        teacherCommentDraft?: string;
+        draftComment?: string;
+        guidelineSummary?: string;
+        checkPoints?: string[];
+        confidence?: number;
+      }>("/api/ai/teacher/review-draft", {
+        method: "POST",
+        body: {
+          submissionId: Number.isFinite(numId) && numId > 0 ? numId : undefined,
+          area: submission.area,
+          itemName: submission.itemName,
+          detail: submission.detail,
+          description: submission.description,
+          criteria: item?.description || item?.scoringType || "배점 기준에 따른 심사",
+          maxScore,
+        },
+      });
+      const draft = res.teacherCommentDraft || res.draftComment;
+      if (draft) setComment(draft);
+      const recScore = res.recommendedScore ?? res.score;
+      if (recScore !== undefined && recScore !== null) setScoreInput(String(recScore));
+      setAiDraftInfo({
+        guideline: res.guidelineSummary,
+        checkPoints: res.checkPoints,
+        confidence: res.confidence,
+      });
+      setNotice("AI 심사 초안 및 추천 점수를 불러왔습니다. 검토 후 확정해 주세요.");
+    } catch (e) {
+      setError(`AI 초안 생성 실패: ${apiErrorMessage(e)}`);
+    } finally {
+      setAiLoading(false);
+    }
+  }
 
   async function approve() {
     if (saving.current) return;
     setNotice("");
-    if (!submission || !canReview || !editable || !item) { setError("현재 상태 또는 학년도에서는 심사할 수 없습니다."); return; }
+    if (!submission || !canReview || !editable) { setError("현재 상태 또는 학년도에서는 심사할 수 없습니다."); return; }
     if (alreadyApproved && !comment.trim()) { setError("점수 수정 사유를 입력해 주세요."); return; }
     const score = Number(scoreInput);
     if (!scoreInput.trim() || !Number.isFinite(score) || score < 0) {
@@ -72,7 +202,8 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
         { before: submission.score, after: score, reason: comment.trim() || "승인", at: new Date().toISOString() },
       ],
     });
-    setNotice("저장했습니다. 학생 점수를 다시 계산했습니다 (로컬 데모).");
+    setRemoteSubmission((prev) => prev ? { ...prev, status: "인정완료", score, teacherComment: comment.trim() || "제출 자료를 확인하여 인정 처리했습니다." } : prev);
+    setNotice("저장했습니다. 심사 결과가 성공적으로 반영되었습니다.");
     setComment("");
     } catch { setError("저장하지 못했습니다. 다시 시도해 주세요."); }
     finally { saving.current = false; setBusy(false); }
@@ -96,6 +227,7 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
       reviewedAt: new Date().toISOString().slice(0, 10),
       reviewerId: user?.id,
     });
+    setRemoteSubmission((prev) => prev ? { ...prev, status: rejectStatus, score: undefined, teacherComment: comment.trim() } : prev);
     setNotice(`${rejectStatus} 처리했습니다.`);
     setComment("");
     } catch { setError("처리하지 못했습니다. 다시 시도해 주세요."); }
@@ -104,6 +236,14 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
 
   const scoreRatio = maxScore > 0 && Number.isFinite(Number(scoreInput))
     ? Math.max(0, Math.min(1, Number(scoreInput) / maxScore)) : 0;
+
+  if (loadingDetail && (!submission || !student)) {
+    return (
+      <div className="py-12 text-center text-sm text-ink-soft">
+        제출 자료를 불러오는 중입니다...
+      </div>
+    );
+  }
 
   if (!submission || !student || !canReview) {
     return (
@@ -128,15 +268,40 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
       />
       {notice && <p role="status" className="mb-4 text-sm text-certified">{notice}</p>}
       <section className="mb-5 rounded-lg border border-brass/40 bg-brass-soft/40 p-5">
-        <h2 className="text-sm font-semibold">AI 심사 Copilot · 로컬 데모</h2>
-        <p className="mt-2 text-sm text-ink-soft">서버 AI가 아닌 로컬 검토 문구 템플릿입니다. 파일 내용을 분석하거나 진위를 확인하지 않으며 점수를 자동 부여하지 않습니다.</p>
-        <button disabled={busy || !editable} onClick={() => {
-          setComment(alreadyApproved ? "" : `${submission.itemName}의 인정 기준과 활동일을 확인해 주세요. ${submission.fileName ? "데모 파일은 원본이 저장되지 않으므로 실제 증빙을 별도로 확인해야 합니다." : "첨부 링크와 증빙 요건을 확인해 주세요."}`);
-          setNotice(alreadyApproved ? "점수 수정 사유는 실제 변경 이유를 직접 입력해 주세요." : "로컬 검토 초안을 입력했습니다. 실제 증빙 확인 후 수정해 주세요.");
-        }} className="mt-3 rounded-md border border-line px-3 py-2 text-sm disabled:opacity-50">로컬 심사 초안 생성</button>
+        <div className="flex items-center justify-between">
+          <h2 className="flex items-center gap-1.5 text-sm font-semibold text-ink">
+            <Sparkles size={16} className="text-brass" /> AI 심사 Copilot
+          </h2>
+          {aiDraftInfo?.confidence !== undefined && (
+            <span className="text-xs font-medium text-brass">신뢰도: {Math.round(aiDraftInfo.confidence * 100)}%</span>
+          )}
+        </div>
+        <p className="mt-2 text-xs text-ink-soft">
+          제출 내용과 평가 기준을 AI가 분석하여 검토 의견 초안과 권장 점수를 제안합니다. 최종 심사 결과는 교사가 확인 후 결정합니다.
+        </p>
+        {aiDraftInfo?.guideline && (
+          <div className="mt-3 rounded-md bg-paper-raised p-3 text-xs text-ink">
+            <p className="font-semibold text-brass">심사 가이드 요약</p>
+            <p className="mt-1">{aiDraftInfo.guideline}</p>
+            {aiDraftInfo.checkPoints && aiDraftInfo.checkPoints.length > 0 && (
+              <ul className="mt-2 list-inside list-disc space-y-0.5 text-ink-soft">
+                {aiDraftInfo.checkPoints.map((cp, idx) => (
+                  <li key={idx}>{cp}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        <button
+          disabled={busy || !editable || aiLoading}
+          onClick={requestAiDraft}
+          className="mt-3 rounded-md border border-line bg-paper-raised px-3 py-1.5 text-sm font-medium text-ink hover:bg-paper disabled:opacity-50"
+        >
+          {aiLoading ? "AI 분석 중..." : "AI 심사 초안 생성"}
+        </button>
       </section>
       <section aria-live="polite" className="mb-5 rounded-lg border border-line p-4 text-sm">
-        <h2 className="font-semibold">학생 영역별 점수 · 로컬 계산</h2>
+        <h2 className="font-semibold">학생 영역별 점수</h2>
         {user && canManageStudent(user, student) && year && student.grade && computeAreaResults(student.id, year.year, student.grade, year, submissions, points).map((r) => <p key={r.area}>{r.area}: {r.score} / {r.maxScore}</p>)}
       </section>
 
@@ -175,8 +340,15 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
 
             <div className="mt-3 flex flex-wrap gap-3 text-xs text-ink-soft">
               {submission.fileName && (
-                <button type="button" onClick={() => setNotice("로컬 데모는 파일명만 저장합니다. 원본 다운로드 및 1회용 티켓 발급을 제공하지 않습니다.")} className="inline-flex items-center gap-1 text-left">
-                  <FileText size={13} strokeWidth={1.75} /> {submission.fileName} · 다운로드 불가 (데모)
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const res = await downloadSubmissionFile(submission.id, submission.filePath);
+                    if (!res.ok) setNotice(res.message || "파일 다운로드 실패");
+                  }}
+                  className="inline-flex items-center gap-1 text-left text-brass hover:underline"
+                >
+                  <FileText size={13} strokeWidth={1.75} /> {submission.fileName} (다운로드)
                 </button>
               )}
               {submission.link && (

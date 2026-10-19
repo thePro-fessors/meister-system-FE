@@ -3,23 +3,16 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { Eye, EyeOff } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { loginDestination } from "@/lib/navigation";
-
-const DEMO_ACCOUNTS = [
-  { id: "student1", label: "학생 · 김민준", password: "password123!" },
-  { id: "teacher1", label: "1-1 담임교사", password: "password123!" },
-  { id: "teacher2", label: "1-2 담임교사", password: "password123!" },
-  { id: "head1", label: "1학년 부장교사", password: "password123!" },
-  { id: "vp", label: "교감", password: "password123!" },
-  { id: "admin", label: "관리자", password: "admin1234!" },
-];
 
 export default function LoginPage() {
   const { user, loading, pending, login } = useAuth();
   const router = useRouter();
   const [id, setId] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -63,24 +56,34 @@ export default function LoginPage() {
             required
             value={id}
             onChange={(e) => setId(e.target.value)}
-            placeholder="student1 / teacher1 / admin"
+            placeholder="아이디를 입력하세요"
             className="mb-4 w-full rounded-md border border-line bg-white px-3 py-2.5 text-sm outline-none focus:border-brass focus:ring-1 focus:ring-brass"
           />
 
           <label className="mb-1.5 block text-sm font-medium text-ink" htmlFor="password">
             비밀번호
           </label>
-          <input
-            id="password"
-            disabled={pending || loading}
-            autoComplete="current-password"
-            required
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="비밀번호를 입력하세요"
-            className="mb-2 w-full rounded-md border border-line bg-white px-3 py-2.5 text-sm outline-none focus:border-brass focus:ring-1 focus:ring-brass"
-          />
+          <div className="relative mb-2">
+            <input
+              id="password"
+              disabled={pending || loading}
+              autoComplete="current-password"
+              required
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="비밀번호를 입력하세요"
+              className="w-full rounded-md border border-line bg-white px-3 py-2.5 pr-10 text-sm outline-none focus:border-brass focus:ring-1 focus:ring-brass"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((prev) => !prev)}
+              aria-label={showPassword ? "비밀번호 숨기기" : "비밀번호 보기"}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-1 text-ink-soft hover:text-ink"
+            >
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
 
           {error && (
             <p role="alert" className="mb-2 rounded-md bg-alert-soft px-3 py-2 text-sm text-alert">{error}</p>
@@ -100,28 +103,6 @@ export default function LoginPage() {
           아직 계정이 없나요?{" "}
           <Link href="/signup" className="font-semibold text-brass hover:underline">회원가입</Link>
         </p>
-
-        <div className="mt-9 border-t border-line pt-6">
-          <p className="mb-2.5 text-xs font-medium text-ink-soft">체험용 계정 · 선택하면 아이디와 비밀번호가 입력됩니다.</p>
-          <div className="grid grid-cols-1 gap-1.5">
-            {DEMO_ACCOUNTS.map((acc) => (
-              <button
-                key={acc.id}
-                disabled={pending || loading}
-                type="button"
-                onClick={() => {
-                  setId(acc.id);
-                  setPassword(acc.password);
-                  setError(null);
-                }}
-                className="flex items-center justify-between rounded-md border border-line px-3 py-2 text-left text-sm transition-colors hover:border-brass hover:bg-brass-soft/40"
-              >
-                <span className="text-ink">{acc.label}</span>
-                <span className="text-xs text-ink-soft">{acc.id}</span>
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
       </div>
     </div>

@@ -1,299 +1,463 @@
 "use client";
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { DemoUser, PointRecord, Submission, User, YearCriteria } from "@/lib/types";
-import { AuthError, createDemoAuthService, publicUser, type AuthService } from "@/lib/auth-service";
-import { SEED_CRITERIA, SEED_POINTS, SEED_SUBMISSIONS, SEED_USERS } from "@/lib/seed";
-import { canModifyPoint, softDeletePoint, validPointMagnitude } from "@/lib/point-actions";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { AreaCriteria, AreaName, EvalItem, PointRecord, ScoringType, Submission, User, YearCriteria } from "@/lib/types";
+import { AuthService, createBackendAuthService } from "@/lib/auth-service";
+import { apiClient } from "@/lib/api-client";
 
-interface DataShape {
-  users: DemoUser[];
+type ItemRow = [number, string, number, ScoringType, boolean, string];
+function makeItems(rows: ItemRow[]): EvalItem[] {
+  return rows.map(([id, name, maxScore, scoringType, requiresEvidence, description]) => ({
+    id: `item-${id}`, name, maxScore, scoringType, requiresEvidence, description,
+    active: true, ...(id === 405 ? { autoCalculated: true } : {}),
+  }));
+}
+
+const DEFAULT_AREAS: AreaCriteria[] = [
+  { area: "전공역량", maxScore: 25, items: makeItems([
+    [101, "전공 교과 성적 우수", 10, "누적합산형", false, "전공 교과 성취도 A 또는 학기말 성적 우수자 (NEIS연동)"],
+    [102, "전공 프로젝트 포트폴리오", 10, "누적합산형", true, "깃허브 레포지토리 링크 또는 소프트웨어 산출물 PDF"],
+    [103, "교내 전공 경진대회 수상", 8, "최고점수반영형", true, "해커톤, 알고리즘 대회, 임베디드 경진대회 입상 (상장 사본)"],
+    [104, "대외 전공 경진대회 입상", 10, "최고점수반영형", true, "전국 기능경기대회, 정부/공공기관 주최 IT 공모전 수상 (상장 사본)"],
+    [105, "전공 동아리 우수 활동", 5, "고정점수형", true, "전공심화동아리 80% 이상 출석 및 결과물 발표 (활동일지)"],
+    [106, "산학협력 프로젝트 참여", 8, "누적합산형", true, "기업 연계 산학맞춤 멘토링 및 실무 프로젝트 완수 (수행확인서)"],
+    [107, "오픈소스 기여 (Pull Request)", 5, "누적합산형", true, "공개 오픈소스 저장소 PR 머지 또는 기술 아티클 기고 (PR 링크)"],
+  ]) },
+  { area: "외국어역량", maxScore: 20, items: makeItems([
+    [201, "TOEIC 성적 우수 (700점 이상)", 15, "최고점수반영형", true, "공인 토익 700점 이상(15점), 600점 이상(10점) (성적표 사본)"],
+    [202, "TOEIC Bridge 우수 (140점 이상)", 10, "최고점수반영형", true, "토익 브릿지 140점 이상 달성 시 취득 (성적표 사본)"],
+    [203, "교내 영어 말하기/어휘 대회", 8, "최고점수반영형", true, "교내 실무 영어 프레젠테이션 및 보카 경시대회 입상 (상장 사본)"],
+    [204, "방과후 실무영어 성실 이수", 5, "고정점수형", true, "영어 방과후 학교 프로그램 80% 이상 출석 및 수료 (이수증)"],
+    [205, "원어 기술 문서 번역/작성", 5, "누적합산형", true, "영문 오픈소스 공식 문서 번역 및 기술 블로그 포스팅 (번역문/원본)"],
+    [206, "제2외국어 기초 회화 이수", 5, "고정점수형", false, "일본어/중국어 등 기초 외국어 과정 수료 (확인서 선택)"],
+  ]) },
+  { area: "자격취득", maxScore: 20, items: makeItems([
+    [301, "정보처리기능사 취득", 10, "고정점수형", true, "한국산업인력공단 국가기술자격증 정보처리기능사 (자격증 사본)"],
+    [302, "정보보안기능사 / 네트워크관리사", 10, "고정점수형", true, "네트워크관리사 2급 또는 정보보안 분야 공인 자격증 (자격증 사본)"],
+    [303, "SQLD / 리눅스마스터", 8, "고정점수형", true, "SQL 개발자(SQLD) 또는 리눅스마스터 2급 이상 (자격증 사본)"],
+    [304, "AWS / 클라우드 국제공인자격", 10, "최고점수반영형", true, "AWS Certified Cloud Practitioner, SAA, GCP, Azure 등 (디지털 배지/자격증)"],
+    [305, "컴퓨터활용능력 / 사무자격", 5, "최고점수반영형", true, "컴퓨터활용능력 1급/2급, MOS Master 등 (자격증 사본)"],
+    [306, "기타 공인 기술 자격증", 5, "누적합산형", true, "교과협의회에서 인정한 전공 유관 IT 공인 자격증 (자격증 사본)"],
+  ]) },
+  { area: "인성/봉사", maxScore: 20, items: makeItems([
+    [401, "교내외 봉사활동 시간 (40시간 이상)", 10, "누적합산형", true, "1365 또는 VMS 공인 봉사활동 시간 누적 증빙"],
+    [402, "학급 임원 및 학생회 간부 활동", 8, "고정점수형", false, "반장, 부반장, 학생회 부서장 활동 성실 수행 (생활기록부 선택)"],
+    [403, "교내 선행 / 효행 / 모범 표창", 8, "누적합산형", true, "교내외 모범 학생 표창 및 선행상 수상 (표창장)"],
+    [404, "학교폭력 예방 및 또래상담 활동", 5, "고정점수형", true, "또래상담부 수료 및 캠페인 참여 (활동확인서)"],
+    [405, "상벌점 순상점 우수 (상점-벌점 >= 10)", 5, "고정점수형", false, "시스템 내 누적 순상점이 10점 이상인 경우 자동 가산"],
+    [406, "환경 정화 및 멘토링 봉사", 5, "누적합산형", true, "후배 전공 지도 멘토링 또는 지역사회 환경정화 (활동보고서)"],
+    [407, "교내 행사 질서/안전 도우미", 5, "누적합산형", false, "입학설명회, 축제, 체육대회 운영요원 성실 참여 (교사확인서 선택)"],
+  ]) },
+  { area: "창체/독서", maxScore: 15, items: makeItems([
+    [501, "전공/인문 독서 활동 (10권 이상)", 8, "누적합산형", true, "독서교육종합지원시스템 등록 또는 서평 보고서 (독후감/서평)"],
+    [502, "인문학 고전 읽기 프로그램", 5, "고정점수형", true, "학교 권장 인문 고전 도서 완독 및 토론 참여 (활동기록)"],
+    [503, "전공 기술 세미나 발표", 5, "누적합산형", true, "교내 테크톡 또는 전공 세미나 발표자 참여 (발표자료 PDF)"],
+    [504, "교내 1인 1기 문화예술 이수", 4, "고정점수형", false, "악기, 체육, 미술 등 1인 1기 프로그램 80% 이상 참여 (출석부)"],
+    [505, "자율 동아리 주도 활동", 5, "누적합산형", true, "SW 개발/알고리즘 연구 자율동아리 개설 및 산출물 보고서"],
+    [506, "교내 동아리 축제 부스 운영", 4, "고정점수형", false, "동아리 발표회 체험 부스 기획 및 운영 요원 (지도교사 확인)"],
+    [507, "진로/취업 포트폴리오 경진", 5, "최고점수반영형", true, "교내 취업역량강화 이력서/포트폴리오 경진대회 입상 (상장)"],
+  ]) },
+];
+
+const DEFAULT_CRITERIA: YearCriteria[] = [
+  {
+    year: 2026,
+    active: true,
+    gradeCriteria: [1, 2, 3].map((grade) => ({ grade, areas: DEFAULT_AREAS })),
+  },
+];
+
+interface DataContextValue {
+  users: User[];
   criteria: YearCriteria[];
   submissions: Submission[];
   points: PointRecord[];
-}
-
-// Keep legacy data intact; the new criteria use different item IDs and scores.
-const STORAGE_KEY = "meister-app-data-spec-2026-v2";
-
-function loadInitial(): DataShape {
-  if (typeof window === "undefined") {
-    return {
-      users: SEED_USERS,
-      criteria: SEED_CRITERIA,
-      submissions: SEED_SUBMISSIONS,
-      points: SEED_POINTS,
-    };
-  }
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (raw !== null) {
-      const parsed: unknown = JSON.parse(raw);
-      if (matchesShape(parsed, {
-        users: [{ id: "", password: "", name: "", role: "" }],
-        criteria: [{ year: 0, active: false, gradeCriteria: [{ grade: 0, areas: [{ area: "", maxScore: 0, items: [{ id: "", name: "", maxScore: 0, scoringType: "", active: false, requiresEvidence: false }] }] }] }],
-        submissions: [{ id: "", studentId: "", year: 0, area: "", itemId: "", itemName: "", detail: "", activityDate: "", description: "", status: "", submittedAt: "" }],
-        points: [{ id: "", studentId: "", type: "", score: 0, reason: "", date: "", teacherId: "", reflected: false }],
-      })) {
-        const data = parsed as DataShape;
-        if (data.users.every((u) => ["student", "teacher", "admin"].includes(u.role))) return data;
-      }
-      throw new Error("저장 데이터 형식이 올바르지 않습니다. 원본 데이터는 보존되었습니다.");
-    }
-  } catch (cause) {
-    throw cause instanceof Error ? cause : new Error("브라우저 저장 데이터를 읽을 수 없습니다.");
-  }
-  return {
-    users: SEED_USERS,
-    criteria: SEED_CRITERIA,
-    submissions: SEED_SUBMISSIONS,
-    points: SEED_POINTS,
-  };
-}
-
-interface DataContextValue extends Omit<DataShape, "users"> {
-  users: User[];
   authService: AuthService;
-  registerStudent: (input: Pick<DemoUser, "id" | "password" | "name" | "grade" | "classNo" | "number">) => void;
-  registerTeacher: (input: Pick<DemoUser, "id" | "password" | "name"> & { invitationCode: string }) => Promise<void>;
-  addSubmission: (s: Submission) => void;
-  updateSubmission: (id: string, patch: Partial<Submission>) => void;
-  deleteSubmission: (id: string, studentId: string) => void;
-  deletePoint: (id: string, actorId: string) => void;
-  addPoint: (p: PointRecord) => void;
-  updatePoint: (id: string, patch: Partial<PointRecord>, editorId: string, reason: string) => void;
+  loading: boolean;
+  refresh: () => Promise<void>;
+  registerStudent: (input: { id: string; password: string; name?: string; grade?: number; classNo?: number; number?: number }) => void;
+  registerTeacher: (input: { id: string; password: string; name?: string; invitationCode?: string }) => Promise<void>;
+  addSubmission: (s: any) => Promise<any>;
+  updateSubmission: (id: string, patch: Partial<Submission>) => Promise<any>;
+  deleteSubmission: (id: string, studentId: string) => Promise<any>;
+  deletePoint: (id: string, actorId: string) => Promise<any>;
+  addPoint: (p: any) => Promise<any>;
+  updatePoint: (id: string, patch: Partial<PointRecord>, editorId: string, reason: string) => Promise<any>;
   updateCriteria: (criteria: YearCriteria[]) => void;
   resetToSeed: () => void;
 }
 
 const DataContext = createContext<DataContextValue | null>(null);
 
-// Validate nested collections before exposing browser-controlled data to views.
-function matchesShape(value: unknown, template: unknown): boolean {
-  if (Array.isArray(template)) {
-    return Array.isArray(value) && value.every((entry) => matchesShape(entry, template[0]));
-  }
-  if (template !== null && typeof template === "object") {
-    return value !== null && typeof value === "object" && Object.entries(template).every(
-      ([key, expected]) => matchesShape((value as Record<string, unknown>)[key], expected)
-    );
-  }
-  return typeof value === typeof template && (typeof value !== "number" || Number.isFinite(value));
+function mapSubmissionFromBackend(item: any, userIdByStudentId?: Map<number, string>): Submission {
+  const rawSid = Number(item.studentId ?? item.student_id);
+  const mappedUserId =
+    item.userId ??
+    item.user_id ??
+    (Number.isFinite(rawSid) && rawSid > 0 ? userIdByStudentId?.get(rawSid) : undefined);
+  return {
+    id: String(item.id ?? item.submissionId ?? item.submission_id),
+    studentId: String(mappedUserId ?? item.studentId ?? item.student_id ?? ""),
+    rawStudentId: Number.isFinite(rawSid) && rawSid > 0 ? rawSid : undefined,
+    studentName: item.studentName ?? item.student_name,
+    year: Number(item.year ?? 2026),
+    area: (item.area ?? item.areaName ?? item.area_name ?? "전공역량") as AreaName,
+    itemId: String(item.itemId ?? item.item_id),
+    itemName: item.itemName ?? item.item_name ?? "",
+    maxScore: item.maxScore != null ? Number(item.maxScore) : undefined,
+    detail: item.detail || "",
+    activityDate: item.activityDate ? String(item.activityDate).slice(0, 10) : (item.activity_date ? String(item.activity_date).slice(0, 10) : ""),
+    fileName: item.originalFilename ?? item.fileName ?? (item.filePath ? item.filePath.split("/").pop() : undefined),
+    filePath: item.filePath ?? item.fileUrl,
+    fileUrl: item.fileUrl ?? item.filePath,
+    link: item.linkUrl ?? item.link,
+    description: item.description || "",
+    status: item.status || "제출완료",
+    score: (item.score ?? item.grantedScore ?? item.granted_score) != null ? Number(item.score ?? item.grantedScore ?? item.granted_score) : undefined,
+    teacherComment: item.teacherComment ?? item.teacher_comment,
+    submittedAt: (item.submittedAt ?? item.createdAt ?? item.created_at) ? String(item.submittedAt ?? item.createdAt ?? item.created_at).slice(0, 10) : new Date().toISOString().slice(0, 10),
+    reviewedAt: item.reviewedAt ? String(item.reviewedAt).slice(0, 10) : undefined,
+    reviewerId: item.reviewerId ? String(item.reviewerId) : undefined,
+  };
 }
 
-const subscribeToHydration = () => () => {};
+function mapPointFromBackend(p: any, userIdByStudentId?: Map<number, string>): PointRecord {
+  const rawSid = Number(p.studentId ?? p.student_id);
+  const mappedUserId =
+    p.userId ??
+    p.user_id ??
+    (Number.isFinite(rawSid) && rawSid > 0 ? userIdByStudentId?.get(rawSid) : undefined);
+  return {
+    id: String(p.id ?? p.pointId ?? p.merits_point_id),
+    studentId: String(mappedUserId ?? p.studentId ?? p.student_id ?? ""),
+    rawStudentId: Number.isFinite(rawSid) && rawSid > 0 ? rawSid : undefined,
+    studentName: p.studentName ?? p.name,
+    type: p.type === "MERIT" || p.type === "+" ? "상점" : p.type === "DEMERIT" || p.type === "-" ? "벌점" : (p.type || (Number(p.score ?? p.points) < 0 ? "벌점" : "상점")),
+    score: Number(p.score ?? p.points ?? 0),
+    reason: p.reason || "",
+    date: (p.occurredAt ?? p.occurred_at ?? p.date) ? String(p.occurredAt ?? p.occurred_at ?? p.date).slice(0, 10) : new Date().toISOString().slice(0, 10),
+    teacherId: String(p.teacherId ?? p.teachers_id ?? ""),
+    teacherName: p.teacherName ?? p.teacher_name,
+    reflected: Boolean(p.reflected ?? p.is_reflected),
+    reflectedArea: p.reflectedArea ?? p.related_area ?? p.relatedArea,
+    deletedAt: p.deletedAt ?? p.deleted_at,
+  };
+}
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
-  const hydrated = useSyncExternalStore(subscribeToHydration, () => true, () => false);
-  if (!hydrated) return <div role="status">불러오는 중...</div>;
-  return <SingleWriter>{children}</SingleWriter>;
-}
+  const authService = useMemo(() => createBackendAuthService(), []);
+  const [criteria, setCriteria] = useState<YearCriteria[]>(DEFAULT_CRITERIA);
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [points, setPoints] = useState<PointRecord[]>([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(false);
 
-function SingleWriter({ children }: { children: React.ReactNode }) {
-  const [state, setState] = useState<"waiting" | "ready" | "unsupported">("waiting");
-  useEffect(() => {
-    if (!navigator.locks) {
-      queueMicrotask(() => setState("unsupported"));
-      return;
-    }
-    const controller = new AbortController();
-    let release: (() => void) | undefined;
-    let disposed = false;
-    void navigator.locks.request("meister-app-data-writer", { signal: controller.signal }, async () => {
-      if (disposed) return;
-      await new Promise<void>((resolve) => {
-        release = resolve;
-        setState("ready");
-      });
-    }).catch(() => { if (!disposed) setState("unsupported"); });
-    return () => { disposed = true; controller.abort(); release?.(); };
-  }, []);
-  if (state !== "ready") return <main className="p-8" role="status">
-    {state === "waiting" ? "다른 탭에서 사용 중이면 그 탭을 닫아 주세요. 최신 데이터를 불러오기 위해 기다리는 중입니다." : "이 브라우저에서는 안전한 데모 저장을 지원하지 않습니다. HTTPS 또는 localhost에서 최신 브라우저를 사용해 주세요."}
-  </main>;
-  return <StorageRecovery><HydratedDataProvider>{children}</HydratedDataProvider></StorageRecovery>;
-}
-
-class StorageRecovery extends React.Component<{ children: React.ReactNode }, { failed: boolean }> {
-  state = { failed: false };
-  static getDerivedStateFromError() { return { failed: true }; }
-  render() {
-    if (!this.state.failed) return this.props.children;
-    return <main className="space-y-4 p-8" role="alert">
-      <h1 className="text-xl font-semibold">데모 데이터를 불러오지 못했습니다</h1>
-      <p>저장 데이터는 자동 초기화하지 않았습니다. 브라우저 저장소 설정을 확인하거나 개발자 도구에서 데이터를 백업한 후 다시 시도해 주세요. 백업에는 데모 비밀번호가 포함되므로 공유하지 마세요.</p>
-      <button className="rounded border p-2" onClick={() => window.location.reload()}>다시 시도</button>
-      <button className="ml-3 rounded border p-2" onClick={() => {
-        if (!window.confirm("백업하지 않은 데모 데이터가 모두 삭제됩니다. 초기화할까요?")) return;
-        try { window.localStorage.removeItem(STORAGE_KEY); window.location.reload(); }
-        catch { window.alert("저장소에 접근할 수 없습니다. 브라우저 설정을 확인해 주세요."); }
-      }}>데모 데이터 초기화</button>
-    </main>;
-  }
-}
-
-function HydratedDataProvider({ children }: { children: React.ReactNode }) {
-  const [data, setReactData] = useState<DataShape>(loadInitial);
-  const latestData = useRef(data);
-  const setData = useCallback((update: React.SetStateAction<DataShape>) => {
-    const next = typeof update === "function" ? update(latestData.current) : update;
-    latestData.current = next;
-    setReactData(next);
-  }, []);
-  const [storageError, setStorageError] = useState(false);
-  const teacherRegistrationPending = useRef(false);
-  const mounted = useRef(false);
-  useEffect(() => {
-    mounted.current = true;
-    return () => { mounted.current = false; };
-  }, []);
-  const authService = useMemo(
-    () => createDemoAuthService(() => data.users, () => window.sessionStorage),
-    [data.users]
-  );
-
-  useEffect(() => {
+  const refresh = useCallback(async () => {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    } catch {
-      // Storage can be disabled or full; keep the current session usable.
-      queueMicrotask(() => setStorageError(true));
-    }
-  }, [data]);
+      const token = typeof window !== "undefined" ? localStorage.getItem("meister_access_token") : null;
+      if (!token) return;
 
-  const value = useMemo<DataContextValue>(
-    () => ({
-      ...data,
-      points: data.points.filter((p) => !p.deletedAt),
-      deletePoint: (id, actorId) => {
-        const actor = data.users.find((u) => u.id === actorId);
-        if (!actor) throw new Error("로그인이 필요합니다.");
-        const points = softDeletePoint(data.points, id, actor, data.users, new Date().toISOString());
-        setData({ ...data, points });
-      },
-      users: data.users.map(publicUser),
-      authService,
-      registerTeacher: async (input) => {
-        if (teacherRegistrationPending.current) throw new AuthError("PENDING", "이미 가입을 처리 중입니다.");
-        const id = input.id.trim();
-        const name = input.name.trim();
-        const password = input.password;
-        const invitationCode = input.invitationCode;
-        if (!/^[A-Za-z0-9_]{4,20}$/.test(id) || !name || name.length > 50 || password.length < 8 || password.length > 128 || !invitationCode.trim() || invitationCode.length > 256) {
-          throw new AuthError("INVALID_INPUT", "이름, 아이디, 비밀번호 및 초대 코드 입력 조건을 확인해 주세요.");
+      const me = await authService.restore().catch(() => null);
+      const userIdByStudentId = new Map<number, string>();
+      if (me?.studentId) {
+        userIdByStudentId.set(me.studentId, me.id);
+      }
+
+      // 1. 학년도 및 기준 조회
+      try {
+        const critRes = await apiClient.request<{ year?: number; areas?: any[] }>("/api/criteria", { method: "GET" });
+        if (critRes?.areas && Array.isArray(critRes.areas)) {
+          const yr = critRes.year || 2026;
+          const areasByGrade: Record<number, AreaCriteria[]> = { 1: [], 2: [], 3: [] };
+          critRes.areas.forEach((a: any) => {
+            const gr = a.grade || 1;
+            const areaItem: AreaCriteria = {
+              areaId: a.areaId ?? a.area_id,
+              area: a.name as AreaName,
+              maxScore: a.maxScore || 20,
+              items: (a.items || []).map((it: any) => ({
+                id: String(it.itemId ?? it.item_id),
+                name: it.name,
+                maxScore: it.maxScore || 10,
+                scoringType: (it.scoringTypeName || it.scoringType || "고정점수형") as ScoringType,
+                active: it.isActive !== false,
+                requiresEvidence: Boolean(it.requiresEvidence),
+                description: it.subject || it.department || "",
+              })),
+            };
+            if (areasByGrade[gr]) areasByGrade[gr].push(areaItem);
+          });
+          const mappedCriteria: YearCriteria = {
+            year: yr,
+            active: true,
+            gradeCriteria: [1, 2, 3].map((g) => ({
+              grade: g,
+              areas: areasByGrade[g].length > 0 ? areasByGrade[g] : DEFAULT_AREAS,
+            })),
+          };
+          setCriteria([mappedCriteria]);
         }
-        if (data.users.some((user) => user.id.toLowerCase() === id.toLowerCase())) {
-          throw new AuthError("DUPLICATE_ID", "이미 사용 중인 아이디입니다.");
-        }
-        teacherRegistrationPending.current = true;
+      } catch {
+        // Fallback to default criteria
+      }
+
+      if (!me || me.role === "student") {
+        // 학생 권한: 본인 제출 내역 및 상벌점 내역만 조회 (교사 API 호출 차단하여 403 방지)
         try {
-          let response: Response;
-          try {
-            response = await fetch("/api/auth/teacher-code", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ code: invitationCode }),
-              signal: AbortSignal.timeout(15000),
-            });
-          } catch {
-            throw new AuthError("VERIFICATION_UNAVAILABLE", "초대 코드를 확인하지 못했습니다. 연결을 확인하고 다시 시도해 주세요.");
+          const subsRes = await apiClient.request<any[]>("/api/submissions", { method: "GET" });
+          if (Array.isArray(subsRes)) {
+            setSubmissions(subsRes.map((item) => mapSubmissionFromBackend(item, userIdByStudentId)));
           }
-          if (response.status >= 500) throw new AuthError("VERIFICATION_UNAVAILABLE", "코드 확인 서비스를 사용할 수 없습니다. 잠시 후 다시 시도하거나 관리자에게 문의해 주세요.");
-          if (response.status === 429) throw new AuthError("RATE_LIMITED", "코드 확인 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.");
-          const result: unknown = await response.json().catch(() => null);
-          if (!result || typeof result !== "object" || !("verified" in result) || typeof result.verified !== "boolean") {
-            throw new AuthError("VERIFICATION_UNAVAILABLE", "코드 확인 응답을 읽지 못했습니다. 다시 시도해 주세요.");
-          }
-          if (!response.ok || result.verified !== true) {
-            throw new AuthError("INVALID_CODE", "유효한 관리자 발급 초대 코드를 입력해 주세요.");
-          }
-          if (!mounted.current) throw new AuthError("CANCELLED", "가입 처리가 취소되었습니다. 다시 시도해 주세요.");
-          // Use the latest single-writer state after network I/O, including unsaved edits.
-          const current = latestData.current;
-          if (current.users.some((user) => user.id.toLowerCase() === id.toLowerCase())) {
-            throw new AuthError("DUPLICATE_ID", "이미 사용 중인 아이디입니다.");
-          }
-          const next: DataShape = { ...current, users: [...current.users, { id, name, password, role: "teacher" }] };
-          try {
-            window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-          } catch {
-            throw new AuthError("STORAGE_UNAVAILABLE", "계정을 저장하지 못했습니다. 브라우저 저장소 설정을 확인해 주세요.");
-          }
-          setData(next);
-        } finally {
-          teacherRegistrationPending.current = false;
-        }
-      },
-      registerStudent: (input) => {
-        const id = input.id.trim();
-        const name = input.name.trim();
-        if (!/^[A-Za-z0-9_]{4,20}$/.test(id) || !name || name.length > 50 || input.password.length < 8 || input.password.length > 128) {
-          throw new AuthError("INVALID_INPUT", "이름, 아이디 및 비밀번호 입력 조건을 확인해 주세요.");
-        }
-        if (![input.grade, input.classNo, input.number].every((value) => Number.isInteger(value) && value! >= 1)
-          || input.grade! > 3 || input.classNo! > 99 || input.number! > 99) {
-          throw new AuthError("INVALID_INPUT", "학년, 반, 번호를 올바르게 입력해 주세요.");
-        }
-        if (data.users.some((user) => user.id.toLowerCase() === id.toLowerCase())) {
-          throw new AuthError("DUPLICATE_ID", "이미 사용 중인 아이디입니다.");
-        }
-        const next = { ...data, users: [...data.users, {
-          id, name, password: input.password, role: "student" as const,
-          grade: input.grade, classNo: input.classNo, number: input.number,
-        }] };
-        try {
-          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
         } catch {
-          throw new AuthError("STORAGE_UNAVAILABLE", "계정을 저장하지 못했습니다. 브라우저 저장소 설정을 확인해 주세요.");
+          // Keep existing
         }
-        setData(next);
-      },
-      addSubmission: (s) => setData((d) => ({ ...d, submissions: [s, ...d.submissions] })),
-      deleteSubmission: (id, studentId) => setData((d) => ({
-        ...d,
-        submissions: d.submissions.filter((s) => !(s.id === id && s.studentId === studentId && s.status === "제출완료")),
-      })),
-      updateSubmission: (id, patch) =>
-        setData((d) => ({
-          ...d,
-          submissions: d.submissions.map((s) => (s.id === id ? { ...s, ...patch } : s)),
-        })),
-      addPoint: (p) => setData((d) => ({ ...d, points: [p, ...d.points] })),
-      updatePoint: (id, patch, editorId, reason) => {
-        const actor = data.users.find((u) => u.id === editorId);
-        const point = data.points.find((p) => p.id === id);
-        const student = data.users.find((u) => u.id === point?.studentId);
-        if (!actor || !point || !student || !canModifyPoint(actor, point, student) || !reason.trim()) throw new Error("수정 권한과 사유를 확인해 주세요.");
-        if (patch.score !== undefined && (!validPointMagnitude(Math.abs(patch.score)) || (point.type === "상점" ? patch.score <= 0 : patch.score >= 0))) throw new Error("점수는 1~5점이어야 합니다.");
-        setData((d) => ({
-          ...d,
-          points: d.points.map((p) =>
-            p.id === id
-              ? {
-                  ...p,
-                   score: patch.score ?? p.score,
-                  editHistory: [...(p.editHistory ?? []), { editorId, reason, at: new Date().toISOString() }],
-                }
-              : p
-          ),
-        }));
-      },
-      updateCriteria: (criteria) => setData((d) => ({ ...d, criteria })),
-      resetToSeed: () =>
-        setData({
-          users: SEED_USERS,
-          criteria: SEED_CRITERIA,
-          submissions: SEED_SUBMISSIONS,
-          points: SEED_POINTS,
-        }),
-    }),
-    [data, authService, setData]
-  );
 
-  return <DataContext.Provider value={value}>
-    {storageError && <p role="alert" className="bg-alert-soft p-3 text-sm text-alert">브라우저에 데이터를 저장할 수 없습니다. 현재 변경 사항은 새로고침하면 사라질 수 있습니다.</p>}
-    {children}
-  </DataContext.Provider>;
+        try {
+          const ptsRes = await apiClient.request<any[]>("/api/points", { method: "GET" });
+          if (Array.isArray(ptsRes)) {
+            setPoints(ptsRes.map((p) => mapPointFromBackend(p, userIdByStudentId)));
+          }
+        } catch {
+          // Keep existing
+        }
+      } else {
+        // 교사/관리자 권한: 담당 학생 목록 조회 후 필요한 제출물 및 상벌점 조회 (파라미터 없는 400 호출 방지)
+        try {
+          const studentsRes = await apiClient.request<any[]>("/api/teacher/students", { method: "GET" });
+          if (Array.isArray(studentsRes)) {
+            const mappedUsers: User[] = studentsRes.map((st: any) => {
+              const sid = Number(st.studentId ?? st.id);
+              const uid = String(st.userId ?? st.user_id ?? st.studentId ?? st.id);
+              if (Number.isFinite(sid) && sid > 0) {
+                userIdByStudentId.set(sid, uid);
+              }
+              return {
+                id: uid,
+                studentId: Number.isFinite(sid) ? sid : undefined,
+                name: st.name,
+                role: "student",
+                grade: st.grade,
+                classNo: st.classNo ?? st.class_no,
+                number: st.number ?? st.studentNo ?? st.student_number,
+                homeroom: st.homeroom,
+                totalScore: st.totalScore != null ? Number(st.totalScore) : undefined,
+                certStatus: st.certStatus as any,
+                pendingCount: st.pendingCount != null ? Number(st.pendingCount) : undefined,
+                pointTotal: st.pointTotal != null ? Number(st.pointTotal) : undefined,
+              };
+            });
+            setUsers(mappedUsers);
+
+            // 제출물이 있거나 대기 건수가 있는 학생들의 제출 내역 병렬 로드
+            const activeSubStudents = mappedUsers.filter(
+              (u) => u.studentId && ((u.totalScore ?? 0) > 0 || (u.pendingCount ?? 0) > 0 || u.studentId === 1)
+            );
+            const subLists = await Promise.all(
+              activeSubStudents.map((u) =>
+                apiClient
+                  .request<any[]>("/api/submissions", { method: "GET", query: { studentId: u.studentId } })
+                  .catch(() => [])
+              )
+            );
+            setSubmissions(subLists.flat().map((item) => mapSubmissionFromBackend(item, userIdByStudentId)));
+
+            // 상벌점이 있는 학생 목록 조회 후 상벌점 내역 병렬 로드
+            const pointStudentsRes = await apiClient
+              .request<any[]>("/api/teacher/students", { method: "GET", query: { hasPoints: "true" } })
+              .catch(() => []);
+            const pointStudentIds = new Set<number>(
+              [
+                ...(Array.isArray(pointStudentsRes) ? pointStudentsRes.map((s: any) => Number(s.studentId ?? s.id)) : []),
+                ...mappedUsers.filter((u) => (u.pointTotal ?? 0) !== 0).map((u) => Number(u.studentId)),
+              ].filter((n) => Number.isFinite(n) && n > 0)
+            );
+            const ptLists = await Promise.all(
+              [...pointStudentIds].map((sid) =>
+                apiClient
+                  .request<any[]>("/api/points", { method: "GET", query: { studentId: sid } })
+                  .catch(() => [])
+              )
+            );
+            setPoints(ptLists.flat().map((p) => mapPointFromBackend(p, userIdByStudentId)));
+          }
+        } catch {
+          // Not a teacher or error
+        }
+      }
+    } catch {
+      // General refresh catch
+    } finally {
+      setLoading(false);
+    }
+  }, [authService]);
+
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const addSubmission = useCallback(async (s: any) => {
+    let body: FormData | any;
+    if (typeof FormData !== "undefined" && s instanceof FormData) {
+      body = s;
+    } else {
+      const formData = new FormData();
+      const rawItemId = String(s.itemId || s.item_id || "").replace(/^item-/, "");
+      formData.append("item_id", rawItemId);
+      formData.append("detail", (s.detail || "").trim());
+      formData.append("activity_date", s.activityDate || s.activity_date || new Date().toISOString().slice(0, 10));
+      formData.append("description", (s.description || "").trim());
+      if (s.link || s.linkUrl) formData.append("link_url", (s.link || s.linkUrl).trim());
+      if (s.file) formData.append("file", s.file);
+      body = formData;
+    }
+    const result = await apiClient.request("/api/submissions", {
+      method: "POST",
+      body,
+    });
+    await refresh();
+    return result;
+  }, [refresh]);
+
+  const updateSubmission = useCallback(async (id: string, patch: Partial<Submission> & { file?: File }) => {
+    const numericId = Number(id.replace(/^sub-/, ""));
+    const targetId = Number.isFinite(numericId) && numericId > 0 ? numericId : id;
+    const currentSub = submissions.find((s) => String(s.id) === String(id));
+    const isAlreadyApproved = currentSub?.status === "인정완료";
+
+    if (isAlreadyApproved && patch.score !== undefined) {
+      await apiClient.request(`/api/submissions/${targetId}/score`, {
+        method: "PATCH",
+        body: {
+          score: patch.score,
+          reason: patch.teacherComment || "인정 점수 수정",
+        },
+      });
+    } else if (patch.status === "인정완료") {
+      await apiClient.request(`/api/submissions/${targetId}/approve`, {
+        method: "PATCH",
+        body: {
+          score: patch.score,
+          comment: patch.teacherComment || "승인",
+        },
+      });
+    } else if (patch.status === "반려" || patch.status === "재제출요청") {
+      await apiClient.request(`/api/submissions/${targetId}/reject`, {
+        method: "PATCH",
+        body: {
+          comment: patch.teacherComment || (patch.status === "반려" ? "반려" : "재제출 요청"),
+          statusCode: patch.status === "반려" ? 4 : 5,
+        },
+      });
+    } else if (patch.score !== undefined) {
+      await apiClient.request(`/api/submissions/${targetId}/score`, {
+        method: "PATCH",
+        body: {
+          score: patch.score,
+          reason: patch.teacherComment || "점수 수정",
+        },
+      });
+    } else {
+      // Student resubmit
+      let body: FormData | any;
+      if (patch.file) {
+        const formData = new FormData();
+        if (patch.detail) formData.append("detail", patch.detail);
+        if (patch.activityDate) formData.append("activity_date", patch.activityDate);
+        if (patch.description) formData.append("description", patch.description);
+        if (patch.link) formData.append("link_url", patch.link);
+        formData.append("file", patch.file);
+        body = formData;
+      } else {
+        body = {
+          detail: patch.detail,
+          activity_date: patch.activityDate,
+          description: patch.description,
+          link_url: patch.link,
+        };
+      }
+      await apiClient.request(`/api/submissions/${targetId}/resubmit`, {
+        method: "PATCH",
+        body,
+      });
+    }
+    await refresh();
+  }, [refresh, submissions]);
+
+  const deleteSubmission = useCallback(async (id: string) => {
+    const numericId = Number(id.replace(/^sub-/, ""));
+    const targetId = Number.isFinite(numericId) && numericId > 0 ? numericId : id;
+    await apiClient.request(`/api/submissions/${targetId}`, {
+      method: "DELETE",
+    });
+    await refresh();
+  }, [refresh]);
+
+  const addPoint = useCallback(async (p: any) => {
+    const matchedUser = users.find((u) => u.id === p.studentId || String(u.studentId) === String(p.studentId));
+    const targetStudentId = matchedUser?.studentId ?? (Number.isFinite(Number(p.studentId)) ? Number(p.studentId) : p.studentId);
+    const scoreVal = Number(p.score);
+    const isDemerit = p.type === "벌점" || scoreVal < 0;
+    await apiClient.request("/api/points", {
+      method: "POST",
+      body: {
+        studentId: targetStudentId,
+        type: isDemerit ? "벌점" : "상점",
+        score: isDemerit ? -Math.abs(scoreVal) : Math.abs(scoreVal),
+        reason: p.reason,
+        occurredAt: p.date || p.occurredAt || new Date().toISOString().slice(0, 10),
+        relatedArea: p.reflectedArea || p.relatedArea,
+      },
+    });
+    await refresh();
+  }, [refresh, users]);
+
+  const updatePoint = useCallback(async (id: string, patch: Partial<PointRecord>, editorId: string, reason: string) => {
+    const numericId = Number(id.replace(/^pt-/, ""));
+    const targetId = Number.isFinite(numericId) && numericId > 0 ? numericId : id;
+    await apiClient.request(`/api/points/${targetId}`, {
+      method: "PATCH",
+      body: {
+        score: patch.score,
+        reason,
+      },
+    });
+    await refresh();
+  }, [refresh]);
+
+  const deletePoint = useCallback(async (id: string) => {
+    const numericId = Number(id.replace(/^pt-/, ""));
+    const targetId = Number.isFinite(numericId) && numericId > 0 ? numericId : id;
+    await apiClient.request(`/api/points/${targetId}`, {
+      method: "DELETE",
+    });
+    await refresh();
+  }, [refresh]);
+
+  const updateCriteria = useCallback((newCrit: YearCriteria[]) => {
+    setCriteria(newCrit);
+  }, []);
+
+  const value = useMemo<DataContextValue>(() => ({
+    users,
+    criteria,
+    submissions,
+    points: points.filter((p) => !p.deletedAt),
+    authService,
+    loading,
+    refresh,
+    registerStudent: async () => {},
+    registerTeacher: async () => {},
+    addSubmission,
+    updateSubmission,
+    deleteSubmission,
+    addPoint,
+    updatePoint,
+    deletePoint,
+    updateCriteria,
+    resetToSeed: () => {},
+  }), [users, criteria, submissions, points, authService, loading, refresh, addSubmission, updateSubmission, deleteSubmission, addPoint, updatePoint, deletePoint, updateCriteria]);
+
+  return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
 }
 
 export function useData() {
