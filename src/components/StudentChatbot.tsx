@@ -77,7 +77,7 @@ export function StudentChatbot() {
   if (!user) return null;
 
   return (
-    <div className="pointer-events-none fixed bottom-6 right-6 z-50 w-80 max-w-[calc(100vw-3rem)]">
+    <div className="chatbot-position pointer-events-none fixed bottom-6 right-6 z-50 w-80 max-w-[calc(100vw-3rem)]">
       {open && (
         <div className="chatbot-panel pointer-events-auto mb-3 flex h-112 max-h-[calc(100dvh-7rem)] w-full flex-col overflow-hidden rounded-lg border border-line bg-paper-raised shadow-xl">
           <div className="flex items-center justify-between border-b border-line bg-navy px-4 py-3">
@@ -126,7 +126,7 @@ export function StudentChatbot() {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder="궁금한 점을 물어보세요"
-              className="flex-1 rounded-full border border-line px-3 py-2 text-sm outline-none focus:border-brass focus:ring-1 focus:ring-brass"
+              className="min-w-0 flex-1 rounded-full border border-line px-3 py-2 text-base outline-none focus:border-brass focus:ring-1 focus:ring-brass md:text-sm"
             />
             <button
               type="submit"

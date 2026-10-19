@@ -90,6 +90,23 @@ button:not(:disabled), select { cursor: pointer; }
   .app-sidebar { position: sticky; top: 0; height: 100dvh; }
 }
 @media (max-width: 767px) {
+  .mobile-header { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: rgb(255 255 255 / 96%); }
+  .mobile-icon-button { display: grid; place-items: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px; background: var(--navy-soft); }
+  .mobile-tabbar { position: fixed; inset: auto 0 0; z-index: 40; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); padding: 6px 8px max(8px, env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: rgb(255 255 255 / 98%); }
+  .mobile-tab { display: flex; min-height: 54px; flex-direction: column; align-items: center; justify-content: center; gap: 5px; border-radius: 10px; color: var(--ink-soft); font-size: 11px; line-height: 1.3; text-align: center; }
+  .mobile-tab[aria-current="page"] { color: var(--brass); background: var(--brass-soft); font-weight: 700; }
+  .app-content { padding-bottom: calc(104px + env(safe-area-inset-bottom)); overflow-wrap: anywhere; }
+  .app-content .page-header { margin-bottom: 24px; }
+  .app-content :is(input:not([type="checkbox"]):not([type="radio"]), select, textarea), .login-layout :is(input, select, textarea) { min-width: 0; max-width: 100%; font-size: 16px; min-height: 44px; }
+  .app-content button { min-height: 44px; }
+  .app-content :is(fieldset, .grid > *, .flex > *) { min-width: 0; }
+  .app-content :is(fieldset, section).p-6 { padding: 20px; }
+  .app-content .ledger-table :is(th, td) { padding: 12px; }
+  .app-content .ledger-table a { display: inline-flex; align-items: center; min-height: 44px; }
+  .mobile-filters { display: grid; grid-template-columns: minmax(0, 1fr); align-items: stretch; }
+  .mobile-filters :is(input:not([type="checkbox"]), select) { width: 100%; }
+  .chatbot-position { bottom: calc(84px + env(safe-area-inset-bottom)); right: 16px; max-width: calc(100vw - 32px); }
+  .chatbot-position .chatbot-panel { max-height: calc(100dvh - 13rem - env(safe-area-inset-bottom)); }
   .record-summary { grid-template-columns: 1fr 1fr; gap: 20px; padding: 22px; }
   .record-summary > div:first-child { grid-column: 1 / -1; }
   .record-summary > div + div { border-left: 0; padding-left: 0; }
@@ -97,6 +114,9 @@ button:not(:disabled), select { cursor: pointer; }
   .competency-track { grid-row: 2; grid-column: 1 / -1; margin: 4px 0; }
   .login-form-panel { padding: 32px 24px; }
 }
+.mobile-menu { position: fixed; inset: 0; margin: auto; width: min(420px, calc(100% - 24px)); max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--line); border-radius: 20px; background: white; color: var(--ink); padding: 0; }
+.mobile-menu::backdrop { background: rgb(20 35 55 / 45%); backdrop-filter: blur(3px); }
+html:has(.mobile-menu[open]) { overflow: hidden; }
 @media (prefers-reduced-motion: no-preference) {
   .chatbot-panel {
     transform-origin: bottom right;

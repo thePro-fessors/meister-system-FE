@@ -53,7 +53,7 @@ export default function TeacherStudentsPage() {
     <div>
       <PageHeader title="학생 자료 조회" description="권한 범위 내 학생의 인증 현황과 제출 자료를 조회합니다." />
 
-      <div className="mb-5 flex flex-wrap items-end gap-3 rounded-lg border border-line bg-paper-raised p-4">
+      <div className="mobile-filters mb-5 flex flex-wrap items-end gap-3 rounded-lg border border-line bg-paper-raised p-4">
         <Field label="이름">
           <input
             value={name}
@@ -96,7 +96,17 @@ export default function TeacherStudentsPage() {
         </label>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-line bg-paper-raised">
+      <div className="space-y-3 md:hidden">
+        {rows.map(({ student, totalScore, certStatus, pending, pointTotal }) => (
+          <article key={student.id} className="rounded-xl border border-line bg-paper-raised p-4">
+            <div className="flex flex-wrap items-start justify-between gap-2"><div><h2 className="font-semibold">{student.name}</h2><p className="text-xs text-ink-soft">{student.grade}학년 {student.classNo}반 {student.number}번</p></div><StatusPill label={certStatus} /></div>
+            <dl className="my-4 grid grid-cols-3 gap-2 rounded-lg bg-paper p-3 text-sm"><div><dt className="text-xs text-ink-soft">총점</dt><dd className="mt-1 font-semibold">{totalScore.toFixed(1)}점</dd></div><div><dt className="text-xs text-ink-soft">검토 대기</dt><dd className="mt-1 font-semibold">{pending}건</dd></div><div><dt className="text-xs text-ink-soft">상벌점</dt><dd className={`mt-1 font-semibold ${pointTotal < 0 ? "text-alert" : "text-certified"}`}>{pointTotal > 0 ? "+" : ""}{pointTotal}</dd></div></dl>
+            <Link href={`/teacher/students/${student.id}`} className="flex min-h-11 items-center justify-center rounded-lg bg-brass-soft text-sm font-medium text-brass" aria-label={`${student.name} 학생 자료 상세보기`}>학생 자료 상세보기</Link>
+          </article>
+        ))}
+        {rows.length === 0 && <p className="rounded-xl border border-line bg-white p-6 text-center text-sm text-ink-soft">조건에 맞는 학생이 없습니다.</p>}
+      </div>
+      <div className="hidden overflow-hidden rounded-lg border border-line bg-paper-raised md:block">
         <table className="ledger-table">
           <thead>
             <tr>
