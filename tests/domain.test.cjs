@@ -13,7 +13,8 @@ require.extensions[".ts"] = (module, filename) => {
 };
 const { computeAreaResults, gradeFromRatio, academicYear, isUnderReview, netPointsForYear } = require("../src/lib/grading.ts");
 const { isInTeacherScope, canManageStudent, canReviewSubmission } = require("../src/lib/teacherScope.ts");
-const { createDemoAuthService } = require("../src/lib/auth-service.ts");
+const { createDemoAuthService, createBackendAuthService, TOKEN_STORAGE_KEY } = require("../src/lib/auth-service.ts");
+const { ApiError } = require("../src/lib/api-client.ts");
 const { parseLoginResponse, parseMeResponse } = require("../src/lib/auth-contract.ts");
 const { homeForRole, canAccessRole, loginDestination } = require("../src/lib/navigation.ts");
 const { softDeletePoint, validPointMagnitude } = require("../src/lib/point-actions.ts");
@@ -90,6 +91,32 @@ test("storage failures never report a successful demo login or logout", async ()
   assert.equal(await service.restore(), null);
   await assert.rejects(service.login({ username: "student1", password: "1234" }), { code: "STORAGE_UNAVAILABLE" });
   await assert.rejects(service.logout(), { code: "STORAGE_UNAVAILABLE" });
+});
+
+test("backend auth restore preserves token on transient 503 or network error and clears only on 401", async () => {
+  const store = new Map([[TOKEN_STORAGE_KEY, "valid-jwt"]]);
+  const storage = {
+    getItem: (k) => store.get(k) ?? null,
+    setItem: (k, v) => store.set(k, v),
+    removeItem: (k) => store.delete(k),
+  };
+  let nextErr = new ApiError("Temporary outage", 503, "SERVICE_UNAVAILABLE");
+  const mockClient = {
+    async request() {
+      throw nextErr;
+    },
+  };
+  const service = createBackendAuthService(mockClient, () => storage);
+  assert.equal(await service.restore(), null);
+  assert.equal(store.get(TOKEN_STORAGE_KEY), "valid-jwt");
+
+  nextErr = new TypeError("Failed to fetch");
+  assert.equal(await service.restore(), null);
+  assert.equal(store.get(TOKEN_STORAGE_KEY), "valid-jwt");
+
+  nextErr = new ApiError("Expired token", 401, "UNAUTHORIZED");
+  assert.equal(await service.restore(), null);
+  assert.equal(store.has(TOKEN_STORAGE_KEY), false);
 });
 
 const backendUser = { id: "login-name", uuid: "user-uuid", name: "Demo", role: "student", studentId: 42, teacherId: null, grade: null, classNo: null, number: null, homeroom: null };

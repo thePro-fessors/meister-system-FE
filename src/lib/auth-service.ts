@@ -45,12 +45,70 @@ export function publicUser(user: any): User {
 }
 
 export const TOKEN_STORAGE_KEY = "meister_access_token";
+const DEMO_USER_STORAGE_KEY = "meister_current_user";
 
-export function createBackendAuthService(client = apiClient): AuthService {
+export interface StorageLike {
+  getItem(key: string): string | null | undefined;
+  setItem(key: string, value: string): void;
+  removeItem(key: string): void;
+}
+
+export function createDemoAuthService(
+  getUsers: () => Array<User & { password?: string }>,
+  getStorage: () => StorageLike | null = () => (typeof window !== "undefined" ? window.localStorage : null),
+): AuthService {
   return {
     async restore() {
-      if (typeof window === "undefined") return null;
-      const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+      try {
+        const storage = getStorage();
+        const storedId = storage?.getItem(DEMO_USER_STORAGE_KEY);
+        if (!storedId) return null;
+        const found = getUsers().find((u) => u.id === storedId);
+        return found ? publicUser(found) : null;
+      } catch {
+        return null;
+      }
+    },
+    async login({ username, password }) {
+      const found = getUsers().find((u) => u.id === username && u.password === password);
+      if (!found) {
+        throw new AuthError("INVALID_CREDENTIAL", "아이디 또는 비밀번호가 올바르지 않습니다.");
+      }
+      try {
+        const storage = getStorage();
+        if (!storage) throw new Error("No storage");
+        storage.setItem(DEMO_USER_STORAGE_KEY, found.id);
+      } catch {
+        throw new AuthError("STORAGE_UNAVAILABLE", "브라우저 저장소에 접근할 수 없습니다.");
+      }
+      return publicUser(found);
+    },
+    async logout() {
+      try {
+        const storage = getStorage();
+        if (!storage) throw new Error("No storage");
+        storage.removeItem(DEMO_USER_STORAGE_KEY);
+      } catch {
+        throw new AuthError("STORAGE_UNAVAILABLE", "브라우저 저장소에 접근할 수 없습니다.");
+      }
+    },
+  };
+}
+
+export function createBackendAuthService(
+  client = apiClient,
+  getStorage: () => StorageLike | null = () => (typeof window !== "undefined" ? window.localStorage : null),
+): AuthService {
+  return {
+    async restore() {
+      let storage: StorageLike | null = null;
+      try {
+        storage = getStorage();
+      } catch {
+        return null;
+      }
+      if (!storage) return null;
+      const token = storage.getItem(TOKEN_STORAGE_KEY);
       if (!token || !token.trim()) return null;
       try {
         const raw = await client.request<unknown>("/api/auth/me", {
@@ -59,8 +117,11 @@ export function createBackendAuthService(client = apiClient): AuthService {
         });
         const envelope = { status_code: 200, success: true, data: raw };
         return parseMeResponse(envelope);
-      } catch {
-        localStorage.removeItem(TOKEN_STORAGE_KEY);
+      } catch (err) {
+        const status = err instanceof ApiError ? err.status : (err && typeof err === "object" && "status" in err ? (err as { status?: number }).status : undefined);
+        if (status === 401) {
+          storage.removeItem(TOKEN_STORAGE_KEY);
+        }
         return null;
       }
     },
@@ -73,9 +134,8 @@ export function createBackendAuthService(client = apiClient): AuthService {
         });
         const envelope = { status_code: 200, success: true, data: raw };
         const parsed = parseLoginResponse(envelope);
-        if (typeof window !== "undefined") {
-          localStorage.setItem(TOKEN_STORAGE_KEY, parsed.token);
-        }
+        const storage = getStorage();
+        storage?.setItem(TOKEN_STORAGE_KEY, parsed.token);
         return parsed.user;
       } catch (err) {
         if (err instanceof ApiError) {
@@ -93,8 +153,10 @@ export function createBackendAuthService(client = apiClient): AuthService {
       } catch {
         // Proceed with local logout regardless of network error
       } finally {
-        if (typeof window !== "undefined") {
-          localStorage.removeItem(TOKEN_STORAGE_KEY);
+        try {
+          getStorage()?.removeItem(TOKEN_STORAGE_KEY);
+        } catch {
+          // Ignore storage error during logout cleanup
         }
       }
     },

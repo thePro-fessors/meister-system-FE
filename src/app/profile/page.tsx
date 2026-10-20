@@ -40,13 +40,16 @@ function Profile() {
     }
     setBusy(true);
     try {
-      await apiClient.request("/api/auth/password", {
+      const res = await apiClient.request<{ token?: string }>("/api/auth/password", {
         method: "PATCH",
         body: {
           currentPassword,
           newPassword,
         },
       });
+      if (res && typeof res === "object" && typeof res.token === "string" && res.token) {
+        localStorage.setItem("meister_access_token", res.token);
+      }
       setNotice("비밀번호가 성공적으로 변경되었습니다.");
       setCurrentPassword("");
       setNewPassword("");

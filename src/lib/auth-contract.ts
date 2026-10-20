@@ -1,4 +1,5 @@
 import { AuthError } from "./auth-service";
+import { academicYear } from "./grading";
 import type { User } from "./types";
 
 // Pure boundary helpers for BE/routers/auth.py. No network or token storage here.
@@ -58,7 +59,7 @@ export function parseBackendUser(value: unknown): User {
 
 export function parseLoginResponse(value: unknown) {
   const data = dataFromEnvelope(value);
-  const currentYear = optionalNumber(data.currentYear ?? data.current_year) ?? 2026;
+  const currentYear = optionalNumber(data.currentYear ?? data.current_year) ?? academicYear(new Date().toISOString().slice(0, 10));
   const token = text(data.token ?? data.access_token ?? data.accessToken);
   return { token, currentYear, user: parseBackendUser(data.user) };
 }

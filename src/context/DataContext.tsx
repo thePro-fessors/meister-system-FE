@@ -4,6 +4,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { AreaCriteria, AreaName, EvalItem, PointRecord, ScoringType, Submission, User, YearCriteria } from "@/lib/types";
 import { AuthService, createBackendAuthService } from "@/lib/auth-service";
 import { apiClient } from "@/lib/api-client";
+import { academicYear } from "@/lib/grading";
 
 type ItemRow = [number, string, number, ScoringType, boolean, string];
 function makeItems(rows: ItemRow[]): EvalItem[] {
@@ -59,9 +60,11 @@ const DEFAULT_AREAS: AreaCriteria[] = [
   ]) },
 ];
 
+const CURRENT_ACADEMIC_YEAR = academicYear(new Date().toISOString().slice(0, 10));
+
 const DEFAULT_CRITERIA: YearCriteria[] = [
   {
-    year: 2026,
+    year: CURRENT_ACADEMIC_YEAR,
     active: true,
     gradeCriteria: [1, 2, 3].map((grade) => ({ grade, areas: DEFAULT_AREAS })),
   },
@@ -100,7 +103,7 @@ function mapSubmissionFromBackend(item: any, userIdByStudentId?: Map<number, str
     studentId: String(mappedUserId ?? item.studentId ?? item.student_id ?? ""),
     rawStudentId: Number.isFinite(rawSid) && rawSid > 0 ? rawSid : undefined,
     studentName: item.studentName ?? item.student_name,
-    year: Number(item.year ?? 2026),
+    year: Number(item.year ?? CURRENT_ACADEMIC_YEAR),
     area: (item.area ?? item.areaName ?? item.area_name ?? "전공역량") as AreaName,
     itemId: String(item.itemId ?? item.item_id),
     itemName: item.itemName ?? item.item_name ?? "",
