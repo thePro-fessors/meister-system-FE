@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Copy, Plus } from "lucide-react";
 import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
@@ -20,7 +20,7 @@ export default function AdminYearsPage() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  async function loadYears() {
+  const loadYears = useCallback(async () => {
     try {
       const res = await apiClient.request<{ years?: any[] } | any[]>("/api/years");
       const raw = Array.isArray(res) ? res : (res?.years ?? []);
@@ -40,11 +40,11 @@ export default function AdminYearsPage() {
     } catch {
       // Fallback to criteria from DataContext
     }
-  }
+  }, [criteria]);
 
   useEffect(() => {
     void loadYears();
-  }, [criteria]);
+  }, [loadYears]);
 
   const mergedYears = useMemo(() => {
     const map = new Map<number, { year: number; active: boolean; gradeCount: number }>();
