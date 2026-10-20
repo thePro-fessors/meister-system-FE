@@ -8,7 +8,7 @@ import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { StatusPill } from "@/components/StatusPill";
 import { canManageStudent, canReviewSubmission, isSubmissionOfStudent } from "@/lib/teacherScope";
-import { academicYear, computeAreaResults, matchesStudentId } from "@/lib/grading";
+import { academicYear, computeAreaResults } from "@/lib/grading";
 import { apiClient, apiErrorMessage, downloadSubmissionFile } from "@/lib/api-client";
 import { Submission, User } from "@/lib/types";
 

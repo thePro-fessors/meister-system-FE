@@ -119,6 +119,36 @@ test("backend auth restore preserves token on transient 503 or network error and
   assert.equal(store.has(TOKEN_STORAGE_KEY), false);
 });
 
+test("backend auth stores the token on login and clears it on logout even if the server call fails", async () => {
+  const store = new Map();
+  const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v), removeItem: (k) => store.delete(k) };
+  const sessionUser = { id: "student1", uuid: "u-1", name: "Demo", role: "student", studentId: 7, teacherId: null, grade: 1, classNo: 2, number: 3, homeroom: null };
+  const calls = [];
+  const mockClient = {
+    async request(path, opts) {
+      calls.push([path, opts.authenticated]);
+      if (path === "/api/auth/login") return { token: "jwt", currentYear: 2026, user: sessionUser };
+      throw new ApiError("Network down", 0, "NETWORK_ERROR");
+    },
+  };
+  const service = createBackendAuthService(mockClient, () => storage);
+  const user = await service.login({ username: "student1", password: "pw" });
+  assert.equal(user.id, "student1");
+  assert.equal(store.get(TOKEN_STORAGE_KEY), "jwt");
+  assert.deepEqual(calls[0], ["/api/auth/login", false]);
+  await service.logout();
+  assert.equal(store.has(TOKEN_STORAGE_KEY), false);
+});
+
+test("backend auth surfaces login failures as AuthError without storing a token", async () => {
+  const store = new Map();
+  const storage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v), removeItem: (k) => store.delete(k) };
+  const mockClient = { async request() { throw new ApiError("Denied", 401, "INVALID_CREDENTIAL"); } };
+  const service = createBackendAuthService(mockClient, () => storage);
+  await assert.rejects(service.login({ username: "x", password: "y" }), { name: "AuthError", code: "INVALID_CREDENTIAL" });
+  assert.equal(store.has(TOKEN_STORAGE_KEY), false);
+});
+
 const backendUser = { id: "login-name", uuid: "user-uuid", name: "Demo", role: "student", studentId: 42, teacherId: null, grade: null, classNo: null, number: null, homeroom: null };
 test("BE response boundary preserves distinct IDs and normalizes nullable fields", () => {
   const response = { success: true, status_code: 200, data: { token: "token", currentYear: 2026, user: backendUser } };
