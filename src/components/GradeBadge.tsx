@@ -12,8 +12,8 @@ export function GradeBadge({ grade }: { grade: string }) {
     <span
       aria-label={`등급: ${grade}`}
       title={grade}
-      className={`inline-flex h-8 min-w-8 items-center justify-center rounded-lg border px-2 font-display font-semibold ${
-        isUnachieved ? "text-xs" : "text-sm"
+      className={`inline-flex h-8 items-center justify-center rounded-lg border font-display font-semibold whitespace-nowrap shrink-0 ${
+        isUnachieved ? "min-w-[54px] px-2 text-xs" : "w-8 min-w-8 text-sm"
       } ${style}`}
     >
       {grade}
