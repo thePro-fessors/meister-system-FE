@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Sparkles } from "lucide-react";
+import { Sparkles, Printer, Award } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { useData } from "@/context/DataContext";
@@ -17,6 +17,15 @@ interface ServerCertStatus {
   totalScore?: number;
   pointTotal?: number;
   certStatus?: CertStatus;
+  isAllS?: boolean;
+  canPrintEvaluation?: boolean;
+  unmetAreas?: {
+    areaId?: number;
+    area: string;
+    grade: string;
+    score: number;
+    maxScore: number;
+  }[];
   areas?: {
     area: string;
     score: number;
@@ -100,8 +109,30 @@ export default function StudentDashboard() {
         </div>
         <div>
           <p className="text-xs text-ink-soft">전체 인증 상태</p>
-          <div className="mt-2.5">
+          <div className="mt-2.5 flex flex-wrap items-center gap-2">
             <StatusPill label={certStatus} />
+            {serverStatus?.isAllS && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-brass/40 bg-brass-soft/40 px-2 py-0.5 text-[11px] font-semibold text-brass">
+                <Award size={12} /> 전 영역 S
+              </span>
+            )}
+          </div>
+          <div className="mt-2">
+            {serverStatus?.canPrintEvaluation ? (
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="inline-flex items-center gap-1.5 rounded-md border border-line bg-white px-2.5 py-1 text-xs font-semibold text-ink shadow-sm hover:bg-brass-soft/40 print:hidden"
+                title="인증평가표 출력 (인쇄/PDF)"
+              >
+                <Printer size={13} className="text-brass" />
+                <span>인증평가표 출력</span>
+              </button>
+            ) : (
+              <span className="text-[11px] text-ink-soft">
+                인증평가표: 단계별 미달성
+              </span>
+            )}
           </div>
         </div>
         <div>
@@ -115,6 +146,18 @@ export default function StudentDashboard() {
           </p>
         </div>
       </div>
+
+      {serverStatus?.unmetAreas && serverStatus.unmetAreas.length > 0 && (
+        <div className="mb-6 rounded-lg border border-line bg-paper px-5 py-4 text-xs print:hidden">
+          <p className="font-semibold text-alert">단계별 인증 미달 영역 안내 (A 미만)</p>
+          <p className="mt-1 text-ink-soft">
+            단계별 인증 충족 및 인증평가표 출력을 위해 다음 영역의 보완이 필요합니다:{" "}
+            <span className="font-medium text-ink">
+              {serverStatus.unmetAreas.map((a) => `${a.area} (${a.grade}등급, ${a.score}/${a.maxScore}점)`).join(", ")}
+            </span>
+          </p>
+        </div>
+      )}
 
       <section className="competency-panel mb-6" aria-labelledby="competency-title">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-line px-5 py-5 sm:px-7">
