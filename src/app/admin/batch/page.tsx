@@ -33,6 +33,15 @@ export default function BatchPage() {
   const [file, setFile] = useState<File | null>(null);
   const [validation, setValidation] = useState("");
   const [fileKey, setFileKey] = useState(0);
+  const [useAsync, setUseAsync] = useState(true);
+  const [sseProgress, setSseProgress] = useState<{
+    taskId: string;
+    progress: number;
+    processedCount: number;
+    totalCount: number;
+    status: string;
+    errorCount: number;
+  } | null>(null);
   const report = task.data;
 
   function downloadSample() {
@@ -48,6 +57,73 @@ export default function BatchPage() {
     URL.revokeObjectURL(url);
   }
 
+  function handleAsyncUpload(uploadFile: File) {
+    const body = new FormData();
+    body.append("file", uploadFile);
+    void task.run(async (signal) => {
+      setSseProgress({
+        taskId: "",
+        progress: 0,
+        processedCount: 0,
+        totalCount: 0,
+        status: "PROCESSING",
+        errorCount: 0,
+      });
+
+      const res = await apiClient.request<{
+        taskId: string;
+        status: string;
+        totalCount: number;
+        progressUrl: string;
+      }>("/api/admin/students/batch/async", { method: "POST", body, signal });
+
+      const taskId = res?.taskId;
+      if (!taskId) throw new ApiError("작업 ID를 수신하지 못했습니다.", 0, "INVALID_RESPONSE");
+
+      return new Promise<BatchReport>((resolve, reject) => {
+        const es = new EventSource(`/api/admin/batch/tasks/${taskId}/progress`);
+        es.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (data.status === "NOT_FOUND") {
+              es.close();
+              reject(new ApiError("배치 작업을 찾을 수 없습니다.", 404, "NOT_FOUND"));
+              return;
+            }
+            setSseProgress({
+              taskId: data.taskId,
+              progress: data.progress ?? 0,
+              processedCount: data.processedCount ?? 0,
+              totalCount: data.totalCount ?? 0,
+              status: data.status,
+              errorCount: data.errorCount ?? 0,
+            });
+
+            if (data.status === "COMPLETED") {
+              es.close();
+              resolve({
+                total_count: data.totalCount,
+                success_count: (data.createdCount ?? 0) + (data.updatedCount ?? 0),
+                failed_count: data.errorCount ?? 0,
+                imported_count: data.createdCount ?? 0,
+                taskId: data.taskId,
+              } as BatchReport & { taskId?: string });
+            } else if (data.status === "FAILED") {
+              es.close();
+              reject(new ApiError(data.error || "배치 처리 중 오류가 발생했습니다.", 500, "BATCH_FAILED"));
+            }
+          } catch {
+            // Keep-alive or ignore
+          }
+        };
+        es.onerror = () => {
+          es.close();
+          reject(new ApiError("SSE 진행률 스트림 연결이 중단되었습니다.", 0, "SSE_ERROR"));
+        };
+      });
+    });
+  }
+
   return <>
     <PageHeader eyebrow="관리자" title="명단 일괄 등록" description="학생, NEIS 학적 및 교원 명단을 서버에 일괄 등록합니다." />
     <SpecAdminLinks /><ApiAvailability state={availability} />
@@ -55,6 +131,10 @@ export default function BatchPage() {
       <form className="space-y-4" onSubmit={(event) => {
         event.preventDefault();
         if (!availability.available || !file || task.loading) return;
+        if (mode === "student" && useAsync) {
+          handleAsyncUpload(file);
+          return;
+        }
         const body = new FormData(); body.append("file", file);
         void task.run(async (signal) => {
           const result = await apiClient.request<BatchReport>(modes[mode].path, { method: "POST", body, signal });
@@ -73,15 +153,23 @@ export default function BatchPage() {
           };
         });
       }}>
-        <label className="block space-y-2 text-sm">등록 유형
-          <select disabled={task.loading} className={specInput} value={mode} onChange={(event) => {
-            setMode(event.target.value as keyof typeof modes); setFile(null); setValidation(""); setFileKey((value) => value + 1); task.reset();
-          }}>{Object.entries(modes).map(([key, item]) => <option key={key} value={key}>{item.label}</option>)}</select>
-        </label>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <label className="block space-y-2 text-sm flex-1 min-w-[200px]">등록 유형
+            <select disabled={task.loading} className={specInput} value={mode} onChange={(event) => {
+              setMode(event.target.value as keyof typeof modes); setFile(null); setValidation(""); setFileKey((value) => value + 1); task.reset(); setSseProgress(null);
+            }}>{Object.entries(modes).map(([key, item]) => <option key={key} value={key}>{item.label}</option>)}</select>
+          </label>
+          {mode === "student" && (
+            <label className="inline-flex items-center gap-2 text-sm text-ink-soft cursor-pointer pt-6">
+              <input type="checkbox" checked={useAsync} onChange={(e) => setUseAsync(e.target.checked)} disabled={task.loading} className="rounded border-line" />
+              <span>실시간 비동기 백그라운드 등록 (SSE 타임아웃 방어)</span>
+            </label>
+          )}
+        </div>
         <label className="block space-y-2 text-sm">엑셀 또는 CSV 파일
           <input key={fileKey} type="file" accept=".xlsx,.csv" disabled={task.loading} className={specInput} onChange={(event) => {
             const selected = event.target.files?.[0] ?? null;
-            task.reset(); setValidation(""); setFile(null);
+            task.reset(); setValidation(""); setFile(null); setSseProgress(null);
             if (!selected) return;
             if (!/\.(xlsx|csv)$/i.test(selected.name) || selected.size === 0) {
               setValidation("내용이 있는 .xlsx 또는 .csv 파일을 선택해 주세요."); return;
@@ -100,13 +188,45 @@ export default function BatchPage() {
           </button>
         </div>
         {validation && <p role="alert" className="text-sm text-alert">{validation}</p>}
-        <button className={specButton} disabled={!availability.available || !file || task.loading} aria-busy={task.loading}>{task.loading ? "업로드 중..." : "명단 등록"}</button>
+
+        {/* 비동기 실시간 SSE Progress Bar */}
+        {task.loading && sseProgress && (
+          <div className="space-y-2 rounded-lg border border-line bg-paper/60 p-4">
+            <div className="flex items-center justify-between text-xs font-medium text-ink-soft">
+              <span>대량 등록 진행률: {sseProgress.progress}%</span>
+              <span>{sseProgress.processedCount} / {sseProgress.totalCount}건 처리 중</span>
+            </div>
+            <div className="h-2 w-full overflow-hidden rounded-full bg-paper border border-line">
+              <div
+                className="h-full bg-brass transition-all duration-300 ease-out"
+                style={{ width: `${sseProgress.progress}%` }}
+              />
+            </div>
+            <p className="text-xs text-ink-soft">대량 명단을 원자적 트랜잭션으로 분할 검증 및 적재하고 있습니다. 페이지를 벗어나지 마세요.</p>
+          </div>
+        )}
+
+        <button className={specButton} disabled={!availability.available || !file || task.loading} aria-busy={task.loading}>
+          {task.loading ? (sseProgress ? `등록 중 (${sseProgress.progress}%)` : "업로드 중...") : "명단 등록"}
+        </button>
       </form>
       <TaskStatus {...task} />
       {task.error && <p className="text-xs text-ink-soft">네트워크 오류가 나도 서버에서 등록됐을 수 있습니다. 재시도 전에 등록 내역을 확인하세요.</p>}
     </SpecAdminPanel>
     {report && <SpecAdminPanel>
-      <h2 className="font-display font-semibold">등록 결과 · {modes[mode].label}</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="font-display font-semibold">등록 결과 · {modes[mode].label}</h2>
+        {(report as any).taskId && (
+          <a
+            href={`/api/admin/batch/tasks/${(report as any).taskId}/report/download`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-md border border-alert/30 bg-alert-soft/20 px-3 py-1.5 text-xs font-medium text-alert hover:bg-alert-soft/40"
+          >
+            실패 행 상세 리포트 (CSV) 다운로드
+          </a>
+        )}
+      </div>
       <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">
         {([["전체", report.total_count ?? report.totalProcessed], ["성공", report.success_count ?? report.successCount], ["실패", report.failed_count ?? (report as any).failedCount], ["등록 학생", report.imported_count ?? (report as any).createdStudentsCount], ["등록 교원", report.total_teachers ?? (report as any).createdTeachersCount]] as const).map(([label, count]) => count !== undefined && <div key={label}><dt className="text-sm text-ink-soft">{label}</dt><dd className="text-xl font-semibold">{count}</dd></div>)}
       </dl>

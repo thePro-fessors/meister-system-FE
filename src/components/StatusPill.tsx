@@ -4,6 +4,7 @@ const STYLES: Record<string, string> = {
   인정완료: "bg-certified-soft text-certified",
   반려: "bg-alert-soft text-alert",
   재제출요청: "bg-alert-soft text-alert",
+  이의신청: "bg-purple-100 text-purple-800",
   "인증 가능": "bg-certified-soft text-certified",
   미달성: "bg-alert-soft text-alert",
   "보완 필요": "bg-amber-soft text-amber",

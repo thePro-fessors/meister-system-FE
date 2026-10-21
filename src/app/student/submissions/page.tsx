@@ -7,9 +7,9 @@ import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { StatusPill } from "@/components/StatusPill";
 import { Submission, SubmissionStatus } from "@/lib/types";
-import { downloadSubmissionFile } from "@/lib/api-client";
+import { downloadSubmissionFile, apiClient } from "@/lib/api-client";
 
-const STATUSES: SubmissionStatus[] = ["제출완료", "검토중", "인정완료", "반려", "재제출요청"];
+const STATUSES: SubmissionStatus[] = ["제출완료", "검토중", "인정완료", "반려", "재제출요청", "이의신청"];
 
 function safeLink(value: string) {
   try { return ["http:", "https:"].includes(new URL(value).protocol); } catch { return false; }
@@ -28,13 +28,15 @@ function decodeHtmlEntities(value?: string | null) {
 
 export default function StudentSubmissionsPage() {
   const { user } = useAuth();
-  const { submissions, criteria, updateSubmission, deleteSubmission } = useData();
+  const { submissions, criteria, updateSubmission, deleteSubmission, refresh } = useData();
   const [year, setYear] = useState(() => String(criteria.find((c) => c.active)?.year ?? ""));
   const [status, setStatus] = useState<SubmissionStatus | "">("");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [appealingId, setAppealingId] = useState<string | null>(null);
+  const [appealReason, setAppealReason] = useState("");
   const [draft, setDraft] = useState({ detail: "", description: "", fileName: "", link: "" });
   const [replacement, setReplacement] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
@@ -57,8 +59,44 @@ export default function StudentSubmissionsPage() {
     setNotice("");
     setReplacement(null);
     setConfirmDeleteId(null);
+    setAppealingId(null);
     setEditing(s.id);
     setDraft({ detail: s.detail, description: s.description, fileName: s.fileName ?? "", link: s.link ?? "" });
+  }
+
+  function startAppeal(s: Submission) {
+    if (busy || s.status !== "반려") return;
+    setError("");
+    setNotice("");
+    setEditing(null);
+    setConfirmDeleteId(null);
+    setAppealingId(s.id);
+    setAppealReason("");
+  }
+
+  async function saveAppeal(id: string) {
+    if (!appealReason.trim()) {
+      setError("이의신청 사유를 입력해주세요.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      const numId = Number(id.replace(/^sub-/, ""));
+      await apiClient.request(`/api/submissions/${numId}/appeal`, {
+        method: "POST",
+        body: JSON.stringify({ appeal_reason: appealReason.trim() }),
+      });
+      setNotice("공식 이의신청이 접수되었습니다. 담당 부장 교사의 2차 재심사가 진행됩니다.");
+      setAppealingId(null);
+      setAppealReason("");
+      await refresh();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "이의신청 접수 중 오류가 발생했습니다.";
+      setError(msg);
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function saveResubmit(id: string) {
@@ -203,6 +241,47 @@ export default function StudentSubmissionsPage() {
               >
                 <RotateCcw size={13} strokeWidth={1.75} /> 보완하여 재제출
               </button>
+            )}
+
+            {s.status === "반려" && editing !== s.id && appealingId !== s.id && (
+              <button
+                onClick={() => startAppeal(s)}
+                className="ml-2 mt-3 inline-flex items-center gap-1.5 rounded-md border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-medium text-purple-700 hover:bg-purple-100"
+              >
+                공식 이의신청
+              </button>
+            )}
+
+            {appealingId === s.id && (
+              <div className="mt-3 space-y-2 rounded-lg border border-purple-200 bg-purple-50/50 p-3">
+                <p className="text-xs font-semibold text-purple-900">공식 이의신청 사유 작성 (부장 교사 2차 재심사)</p>
+                <textarea
+                  className="w-full rounded-md border border-line bg-paper p-2 text-xs"
+                  rows={3}
+                  placeholder="반려 사유에 대한 반론 및 증빙 상세 근거를 작성하세요 (최대 1000자)"
+                  value={appealReason}
+                  onChange={(e) => setAppealReason(e.target.value)}
+                  disabled={busy}
+                />
+                <div className="flex gap-2 justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setAppealingId(null)}
+                    disabled={busy}
+                    className="rounded-md border border-line px-3 py-1 text-xs"
+                  >
+                    취소
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => saveAppeal(s.id)}
+                    disabled={busy || !appealReason.trim()}
+                    className="rounded-md bg-purple-600 px-3 py-1 text-xs font-medium text-white hover:bg-purple-700 disabled:opacity-50"
+                  >
+                    이의신청 접수
+                  </button>
+                </div>
+              </div>
             )}
 
             {s.status === "제출완료" && (

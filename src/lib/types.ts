@@ -91,7 +91,8 @@ export type SubmissionStatus =
   | "검토중"
   | "인정완료"
   | "반려"
-  | "재제출요청";
+  | "재제출요청"
+  | "이의신청";
 
 export interface Submission {
   id: string;
