@@ -408,7 +408,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         score: isDemerit ? -Math.abs(scoreVal) : Math.abs(scoreVal),
         reason: p.reason,
         occurredAt: p.date || p.occurredAt || new Date().toISOString().slice(0, 10),
-        relatedArea: p.reflectedArea || p.relatedArea,
+        relatedArea: p.relatedArea || p.reflectedArea,
+        reflectedArea: p.relatedArea || p.reflectedArea,
       },
     });
     await refresh();

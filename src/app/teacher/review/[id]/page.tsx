@@ -390,7 +390,34 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
 
               {mode === "approve" || alreadyApproved ? (
                 <div className="space-y-3">
-                  <label className="block text-sm font-medium text-ink">인정 점수 (최대 {maxScore}점)</label>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <label className="block text-sm font-medium text-ink">인정 점수 (최대 {maxScore}점)</label>
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                      <span className="text-ink-soft">기준표 퀵 입력:</span>
+                      {[
+                        { label: "만점", ratio: 1.0, percent: "100%" },
+                        { label: "S", ratio: 0.9, percent: "90%" },
+                        { label: "A", ratio: 0.8, percent: "80%" },
+                        { label: "B", ratio: 0.7, percent: "70%" },
+                      ].map((tier) => {
+                        const calculatedScore = Math.round(maxScore * tier.ratio * 10) / 10;
+                        return (
+                          <button
+                            key={tier.label}
+                            type="button"
+                            disabled={!editable || busy}
+                            onClick={() => {
+                              setScoreInput(String(calculatedScore));
+                              setError(null);
+                            }}
+                            className="rounded border border-line bg-white px-2 py-0.5 font-medium text-ink hover:border-brass hover:bg-brass-soft/50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {tier.label} ({tier.percent} · {calculatedScore}점)
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                   <input
                     type="number"
                     step="any"

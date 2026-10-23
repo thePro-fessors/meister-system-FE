@@ -132,6 +132,17 @@ let tokenGetter: TokenGetter | undefined = () => {
   return null;
 };
 export function setApiTokenGetter(getter: TokenGetter | undefined) { tokenGetter = getter; }
+export async function getApiToken(): Promise<string | null> {
+  const token = await tokenGetter?.();
+  if (token && typeof token === "string" && token.trim()) return token.trim();
+  if (typeof window !== "undefined") {
+    const local = localStorage.getItem("meister_access_token");
+    if (local && local.trim()) return local.trim();
+    const session = sessionStorage.getItem("meister_access_token");
+    if (session && session.trim()) return session.trim();
+  }
+  return null;
+}
 export const apiClient = createApiClient({ getToken: () => tokenGetter?.() });
 
 export async function downloadSubmissionFile(submissionId: number | string, fallbackFilePath?: string): Promise<{ ok: boolean; message?: string }> {

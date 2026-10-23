@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/AppShell";
-import { ApiAvailability, SpecAdminLinks, SpecAdminPanel, TaskStatus, specButton, specInput, useApiAvailability, useApiTask } from "@/components/SpecAdminPanel";
+import { SpecAdminPanel, TaskStatus, specButton, specInput, useApiTask } from "@/components/SpecAdminPanel";
 import { ApiError, apiClient, type AnomalyReport, type AuditLogs, type RecalculationReport } from "@/lib/api-client";
 
 const emptyFilters = { action: "", user_id: "", start_date: "", end_date: "" };
@@ -33,7 +33,6 @@ function formatActor(log: any): string {
 }
 
 export default function AuditPage() {
-  const availability = useApiAvailability();
   const logs = useApiTask<AuditLogs>();
   const anomalies = useApiTask<AnomalyReport>();
   const recalculate = useApiTask<RecalculationReport>();
@@ -47,7 +46,6 @@ export default function AuditPage() {
   const [confirmRecalculate, setConfirmRecalculate] = useState(false);
   const { run, reset } = logs;
   useEffect(() => {
-    if (!availability.available) { reset(); return; }
     void run(async (signal) => {
       const result = await apiClient.request<AuditLogs>("/api/admin/audit-logs", { query: { ...filters, page, limit }, signal });
       const total = result?.pagination?.totalCount ?? result?.total;
@@ -55,14 +53,13 @@ export default function AuditPage() {
       return { ...result, total, logs: result.logs };
     }, true);
     return reset;
-  }, [availability.available, filters, page, limit, revision, run, reset]);
+  }, [filters, page, limit, revision, run, reset]);
 
   const yearValid = year === "" || /^\d{4}$/.test(year) && Number(year) >= 1900 && Number(year) <= 9999;
   const body = year ? { year: Number(year) } : {};
   const maintenanceBusy = anomalies.loading || recalculate.loading;
   return <>
     <PageHeader eyebrow="관리자" title="감사로그 및 이상탐지" description="시스템 변경 이력을 조회하고, 의심 제출을 점검하며 인증 데이터를 재계산합니다." />
-    <SpecAdminLinks /><ApiAvailability state={availability} />
     <SpecAdminPanel>
       <h2 className="font-display font-semibold">감사 로그</h2>
       <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => {
@@ -82,7 +79,7 @@ export default function AuditPage() {
         <label className="space-y-1 text-sm">시작일<input className={specInput} type="date" value={draft.start_date} onChange={(event) => setDraft({ ...draft, start_date: event.target.value })} /></label>
         <label className="space-y-1 text-sm">종료일<input className={specInput} type="date" min={draft.start_date || undefined} value={draft.end_date} onChange={(event) => setDraft({ ...draft, end_date: event.target.value })} /></label>
         <label className="space-y-1 text-sm">페이지당 항목<select className={specInput} value={limit} onChange={(event) => { setLimit(Number(event.target.value)); setPage(1); }}>{[10, 20, 50].map((size) => <option key={size}>{size}</option>)}</select></label>
-        <div className="flex items-end"><button className={specButton} disabled={!availability.available}>조회 / 새로고침</button></div>
+        <div className="flex items-end"><button className={specButton}>조회 / 새로고침</button></div>
       </form>
       {validation && <p role="alert" className="text-sm text-alert">{validation}</p>}
       <TaskStatus {...logs} />
@@ -111,9 +108,9 @@ export default function AuditPage() {
         </ol>}
       </>}
       <div className="flex items-center gap-3">
-        <button className={specButton} disabled={!availability.available || logs.loading || page === 1} onClick={() => setPage((value) => value - 1)}>이전</button>
+        <button className={specButton} disabled={logs.loading || page === 1} onClick={() => setPage((value) => value - 1)}>이전</button>
         <span className="text-sm">{page}페이지</span>
-        <button className={specButton} disabled={!availability.available || logs.loading || !logs.data || page * limit >= (logs.data.total ?? logs.data.pagination?.totalCount ?? 0)} onClick={() => setPage((value) => value + 1)}>다음</button>
+        <button className={specButton} disabled={logs.loading || !logs.data || page * limit >= (logs.data.total ?? logs.data.pagination?.totalCount ?? 0)} onClick={() => setPage((value) => value + 1)}>다음</button>
       </div>
     </SpecAdminPanel>
     <SpecAdminPanel>
@@ -123,7 +120,7 @@ export default function AuditPage() {
       </label>
       {!yearValid && <p role="alert" className="text-sm text-alert">1900~9999 사이의 4자리 학년도를 입력해 주세요.</p>}
       <div className="flex flex-wrap items-center gap-3">
-        <button className={specButton} disabled={!availability.available || maintenanceBusy || !yearValid} onClick={() => {
+        <button className={specButton} disabled={maintenanceBusy || !yearValid} onClick={() => {
           void anomalies.run(async (signal) => {
             const result = await apiClient.request<AnomalyReport>("/api/ai/admin/audit-anomalies", { method: "POST", body, signal });
             if (!result || !Array.isArray(result.high_risk_submissions) || typeof result.anomaly_count !== "number") throw new ApiError("이상탐지 응답 형식이 올바르지 않습니다.");
@@ -133,7 +130,7 @@ export default function AuditPage() {
         {!confirmRecalculate ? (
           <button
             className={specButton}
-            disabled={!availability.available || maintenanceBusy || !yearValid}
+            disabled={maintenanceBusy || !yearValid}
             onClick={() => setConfirmRecalculate(true)}
           >
             전체 데이터 재계산
@@ -142,7 +139,7 @@ export default function AuditPage() {
           <div className="inline-flex items-center gap-2">
             <button
               className="rounded-md bg-alert px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
-              disabled={!availability.available || maintenanceBusy || !yearValid}
+              disabled={maintenanceBusy || !yearValid}
               onClick={() => {
                 setConfirmRecalculate(false);
                 void recalculate.run(async (signal) => {

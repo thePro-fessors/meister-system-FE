@@ -139,6 +139,7 @@ export interface PointRecord {
   teacherName?: string;
   reflected: boolean;
   reflectedArea?: AreaName;
+  relatedArea?: AreaName;
   editHistory?: { editorId: string; reason: string; at: string }[];
 }
 

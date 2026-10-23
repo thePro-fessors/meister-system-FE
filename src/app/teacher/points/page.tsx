@@ -10,7 +10,7 @@ import { PageHeader } from "@/components/AppShell";
 import { StatusPill } from "@/components/StatusPill";
 import { canManageStudent } from "@/lib/teacherScope";
 import { canModifyPoint, validPointMagnitude } from "@/lib/point-actions";
-import { PointType } from "@/lib/types";
+import { AREA_NAMES, AreaName, PointType } from "@/lib/types";
 import { academicYear, matchesStudentId } from "@/lib/grading";
 import { DeletePointButton } from "@/components/DeletePointButton";
 import { apiErrorMessage } from "@/lib/api-client";
@@ -27,6 +27,7 @@ export default function TeacherPointsPage() {
   const [studentId, setStudentId] = useState(scopedStudents[0]?.id ?? "");
   const [type, setType] = useState<PointType>("상점");
   const [score, setScore] = useState(1);
+  const [relatedArea, setRelatedArea] = useState<AreaName | "">("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
   const [reason, setReason] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
@@ -78,9 +79,12 @@ export default function TeacherPointsPage() {
         year: academicYear(date),
         teacherId: user!.id,
         reflected: false,
+        relatedArea: relatedArea || undefined,
+        reflectedArea: relatedArea || undefined,
       });
       setReason("");
       setScore(1);
+      setRelatedArea("");
     } catch (cause) {
       setFormError(apiErrorMessage(cause));
     }
@@ -153,6 +157,21 @@ export default function TeacherPointsPage() {
             className="w-full rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-brass"
           />
         </div>
+        <div>
+          <label className="mb-1.5 block text-sm font-medium text-ink">관련 영역</label>
+          <select
+            value={relatedArea}
+            onChange={(e) => setRelatedArea(e.target.value as AreaName | "")}
+            className="w-full rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-brass"
+          >
+            <option value="">관련 영역 선택 (선택 안함)</option>
+            {AREA_NAMES.map((a) => (
+              <option key={a} value={a}>
+                {a}
+              </option>
+            ))}
+          </select>
+        </div>
         <div className="sm:col-span-2 lg:col-span-2">
           <label className="mb-1.5 block text-sm font-medium text-ink">사유</label>
           <input
@@ -162,7 +181,7 @@ export default function TeacherPointsPage() {
             className="w-full rounded-md border border-line px-3 py-2 text-sm outline-none focus:border-brass"
           />
         </div>
-        <p className="text-sm text-ink-soft">학년도 순상점이 10점 이상이면 인성/봉사 항목에 5점이 자동 반영됩니다.</p>
+        <p className="text-sm text-ink-soft sm:col-span-2 lg:col-span-4">학년도 순상점이 10점 이상이면 인성/봉사 항목에 5점이 자동 반영됩니다.</p>
         <div className="flex items-end">
           <button
             type="submit"
@@ -186,6 +205,7 @@ export default function TeacherPointsPage() {
               <th>학생</th>
               <th>구분</th>
               <th>점수</th>
+              <th>관련 영역</th>
               <th>사유</th>
               <th>인증 반영</th>
               <th></th>
@@ -219,6 +239,7 @@ export default function TeacherPointsPage() {
                   )}
                   {canEdit && <DeletePointButton id={p.id} />}
                 </td>
+                <td className="text-ink-soft">{p.reflectedArea || p.relatedArea || "—"}</td>
                 <td className="text-ink">{p.reason}</td>
                 <td className="text-ink-soft">순상점 자동 산정</td>
                 <td>
@@ -252,7 +273,7 @@ export default function TeacherPointsPage() {
             })}
             {list.length === 0 && (
               <tr>
-                <td colSpan={7} className="py-8 text-center text-ink-soft">
+                <td colSpan={8} className="py-8 text-center text-ink-soft">
                   등록된 상벌점 내역이 없습니다.
                 </td>
               </tr>

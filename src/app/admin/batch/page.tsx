@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { PageHeader } from "@/components/AppShell";
-import { ApiAvailability, SpecAdminLinks, SpecAdminPanel, TaskStatus, specButton, specInput, useApiAvailability, useApiTask } from "@/components/SpecAdminPanel";
-import { ApiError, apiClient, apiErrorMessage, type BatchReport } from "@/lib/api-client";
+import { SpecAdminPanel, TaskStatus, specButton, specInput, useApiTask } from "@/components/SpecAdminPanel";
+import { ApiError, apiClient, apiErrorMessage, getApiToken, type BatchReport } from "@/lib/api-client";
 
 const modes = {
   student: {
@@ -27,7 +27,6 @@ const modes = {
 };
 
 export default function BatchPage() {
-  const availability = useApiAvailability();
   const task = useApiTask<BatchReport>();
   const [mode, setMode] = useState<keyof typeof modes>("student");
   const [file, setFile] = useState<File | null>(null);
@@ -80,13 +79,106 @@ export default function BatchPage() {
       const taskId = res?.taskId;
       if (!taskId) throw new ApiError("작업 ID를 수신하지 못했습니다.", 0, "INVALID_RESPONSE");
 
+      const token = await getApiToken();
+      const progressPath = res?.progressUrl || `/api/admin/batch/tasks/${encodeURIComponent(taskId)}/progress`;
+      const sseUrl = token
+        ? `${progressPath}${progressPath.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`
+        : progressPath;
+
       return new Promise<BatchReport>((resolve, reject) => {
-        const es = new EventSource(`/api/admin/batch/tasks/${taskId}/progress`);
+        let isClosed = false;
+        let pollTimer: ReturnType<typeof setTimeout> | null = null;
+        let pollCount = 0;
+        const maxPolls = 180; // 최대 3분간 폴링 유지
+
+        let es: EventSource | null = null;
+
+        const closeStream = () => {
+          if (!isClosed) {
+            isClosed = true;
+            if (pollTimer) {
+              clearTimeout(pollTimer);
+              pollTimer = null;
+            }
+            if (es) {
+              es.close();
+              es = null;
+            }
+          }
+        };
+
+        if (signal.aborted) {
+          closeStream();
+          reject(new DOMException("Aborted", "AbortError"));
+          return;
+        }
+        signal.addEventListener("abort", () => {
+          closeStream();
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+
+        const pollProgress = async () => {
+          if (isClosed) return;
+          try {
+            const fallbackTask = await apiClient.request<any>(
+              `/api/admin/batch/tasks/${encodeURIComponent(taskId)}`,
+              { signal }
+            );
+            if (fallbackTask && !isClosed) {
+              setSseProgress({
+                taskId: fallbackTask.taskId,
+                progress: fallbackTask.progress ?? 0,
+                processedCount: fallbackTask.processedCount ?? 0,
+                totalCount: fallbackTask.totalCount ?? 0,
+                status: fallbackTask.status,
+                errorCount: fallbackTask.errorCount ?? 0,
+              });
+
+              if (fallbackTask.status === "COMPLETED") {
+                closeStream();
+                resolve({
+                  total_count: fallbackTask.totalCount,
+                  success_count: (fallbackTask.createdCount ?? 0) + (fallbackTask.updatedCount ?? 0),
+                  failed_count: fallbackTask.errorCount ?? 0,
+                  imported_count: fallbackTask.createdCount ?? 0,
+                  taskId: fallbackTask.taskId,
+                } as BatchReport & { taskId?: string });
+                return;
+              }
+              if (fallbackTask.status === "FAILED") {
+                closeStream();
+                reject(new ApiError(fallbackTask.error || "배치 처리 중 오류가 발생했습니다.", 500, "BATCH_FAILED"));
+                return;
+              }
+            }
+          } catch {
+            if (signal.aborted) return;
+          }
+
+          pollCount++;
+          if (pollCount >= maxPolls) {
+            closeStream();
+            reject(new ApiError("배치 작업 완료 대기 시간이 초과되었습니다.", 0, "TIMEOUT"));
+            return;
+          }
+
+          if (!isClosed) {
+            pollTimer = setTimeout(pollProgress, 1000);
+          }
+        };
+
+        try {
+          es = new EventSource(sseUrl);
+        } catch {
+          void pollProgress();
+          return;
+        }
+
         es.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
             if (data.status === "NOT_FOUND") {
-              es.close();
+              closeStream();
               reject(new ApiError("배치 작업을 찾을 수 없습니다.", 404, "NOT_FOUND"));
               return;
             }
@@ -100,7 +192,7 @@ export default function BatchPage() {
             });
 
             if (data.status === "COMPLETED") {
-              es.close();
+              closeStream();
               resolve({
                 total_count: data.totalCount,
                 success_count: (data.createdCount ?? 0) + (data.updatedCount ?? 0),
@@ -109,16 +201,21 @@ export default function BatchPage() {
                 taskId: data.taskId,
               } as BatchReport & { taskId?: string });
             } else if (data.status === "FAILED") {
-              es.close();
+              closeStream();
               reject(new ApiError(data.error || "배치 처리 중 오류가 발생했습니다.", 500, "BATCH_FAILED"));
             }
           } catch {
             // Keep-alive or ignore
           }
         };
+
         es.onerror = () => {
-          es.close();
-          reject(new ApiError("SSE 진행률 스트림 연결이 중단되었습니다.", 0, "SSE_ERROR"));
+          if (isClosed) return;
+          if (es) {
+            es.close();
+            es = null;
+          }
+          void pollProgress();
         };
       });
     });
@@ -126,11 +223,10 @@ export default function BatchPage() {
 
   return <>
     <PageHeader eyebrow="관리자" title="명단 일괄 등록" description="학생, NEIS 학적 및 교원 명단을 서버에 일괄 등록합니다." />
-    <SpecAdminLinks /><ApiAvailability state={availability} />
     <SpecAdminPanel>
       <form className="space-y-4" onSubmit={(event) => {
         event.preventDefault();
-        if (!availability.available || !file || task.loading) return;
+        if (!file || task.loading) return;
         if (mode === "student" && useAsync) {
           handleAsyncUpload(file);
           return;
@@ -206,7 +302,7 @@ export default function BatchPage() {
           </div>
         )}
 
-        <button className={specButton} disabled={!availability.available || !file || task.loading} aria-busy={task.loading}>
+        <button className={specButton} disabled={!file || task.loading} aria-busy={task.loading}>
           {task.loading ? (sseProgress ? `등록 중 (${sseProgress.progress}%)` : "업로드 중...") : "명단 등록"}
         </button>
       </form>
@@ -217,14 +313,30 @@ export default function BatchPage() {
       <div className="flex items-center justify-between">
         <h2 className="font-display font-semibold">등록 결과 · {modes[mode].label}</h2>
         {(report as any).taskId && (
-          <a
-            href={`/api/admin/batch/tasks/${(report as any).taskId}/report/download`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-md border border-alert/30 bg-alert-soft/20 px-3 py-1.5 text-xs font-medium text-alert hover:bg-alert-soft/40"
+          <button
+            type="button"
+            onClick={async () => {
+              const taskId = (report as any).taskId;
+              try {
+                const blob = await apiClient.blob(`/api/admin/batch/tasks/${encodeURIComponent(taskId)}/report/download`);
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `batch_error_report_${taskId}.csv`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+              } catch {
+                const token = await getApiToken();
+                const path = `/api/admin/batch/tasks/${encodeURIComponent(taskId)}/report/download`;
+                window.open(token ? `${path}?token=${encodeURIComponent(token)}` : path, "_blank");
+              }
+            }}
+            className="inline-flex items-center gap-1.5 rounded-md border border-alert/30 bg-alert-soft/20 px-3 py-1.5 text-xs font-medium text-alert hover:bg-alert-soft/40 cursor-pointer"
           >
             실패 행 상세 리포트 (CSV) 다운로드
-          </a>
+          </button>
         )}
       </div>
       <dl className="grid grid-cols-2 gap-4 sm:grid-cols-3">

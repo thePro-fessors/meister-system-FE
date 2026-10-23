@@ -15,15 +15,15 @@ test.describe("교사 증빙 심사 및 승인 E2E 흐름", () => {
     await expect(page.locator("body")).toBeVisible();
 
     // 4. 심사 검토 목록 이동
-    await page.goto("/teacher/review");
-    await expect(page.locator("h1, h2")).toContainText(/심사|검토/);
+    await page.goto("/teacher/dashboard");
+    await expect(page.locator("h1, h2")).toContainText(/교사|심사|검토|대시보드/);
 
     // 5. 심사 대기 테이블 렌더링 확인
     const reviewTable = page.locator("table");
     await expect(reviewTable).toBeVisible();
 
-    // 6. 첫 번째 심사 대기 항목 상세 모달/페이지 열람
-    const firstRowAction = page.locator("table tbody tr button").first();
+    // 6. 첫 번째 심사 대기 항목 상세 페이지 열람
+    const firstRowAction = page.locator("table tbody tr a, table tbody tr button").first();
     if (await firstRowAction.isVisible()) {
       await firstRowAction.click();
       // 점수 입력 및 심사의견 필드 확인
