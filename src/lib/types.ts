@@ -155,3 +155,38 @@ export interface AreaResult {
   grade: GradeLevel;
   status: "충족" | "보완 필요";
 }
+
+export interface AdminUserExtra {
+  studentId?: number | null;
+  teachersId?: number | null;
+  grade?: number | null;
+  class?: number | null;
+  number?: number | null;
+  subject?: string | null;
+  department?: string | null;
+  position?: string | null;
+}
+
+export interface AdminUserListItem {
+  uuid: string;
+  id: string;
+  name: string;
+  email: string | null;
+  role: Role;
+  role_code?: number;
+  is_deleted: boolean;
+  isDeleted: boolean;
+  created_at: string;
+  createdAt: string;
+  extra?: AdminUserExtra;
+}
+
+export interface AdminUsersResponse {
+  users: AdminUserListItem[];
+  total: number;
+  deletedCount: number;
+  deleted_count: number;
+  page: number;
+  limit: number;
+}
+

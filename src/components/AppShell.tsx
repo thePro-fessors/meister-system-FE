@@ -15,6 +15,7 @@ import {
   Star,
   Upload,
   Users,
+  UserCog,
   CalendarRange,
   Gauge,
   MessageCircle,
@@ -56,6 +57,7 @@ const NAV: Record<Role, NavItem[]> = {
   ],
   admin: [
     { href: "/admin/overview", label: "전체 현황", icon: Gauge },
+    { href: "/admin/users", label: "전체 유저 탐색", icon: UserCog },
     { href: "/teacher/dashboard", label: "증빙 심사", icon: ClipboardList },
     { href: "/teacher/students", label: "학생 자료 조회", icon: Users },
     { href: "/teacher/points", label: "상벌점 관리", icon: Star },
