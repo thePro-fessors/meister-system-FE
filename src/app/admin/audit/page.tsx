@@ -5,20 +5,37 @@ import { PageHeader } from "@/components/AppShell";
 import { SpecAdminPanel, TaskStatus, specButton, specInput, useApiTask } from "@/components/SpecAdminPanel";
 import { ApiError, apiClient, type AnomalyReport, type AuditLogs, type RecalculationReport } from "@/lib/api-client";
 
-const emptyFilters = { action: "", user_id: "", start_date: "", end_date: "" };
+const emptyFilters = { action: "", role: "", user_id: "", start_date: "", end_date: "" };
 
 const ACTION_LABELS: Record<string, string> = {
-  SUBMIT: "증빙 제출",
-  APPROVE: "심사 승인",
-  REJECT: "심사 반려",
-  REQUEST_RESUBMIT: "재제출 요청",
-  SCORE_MODIFY: "점수 수정",
-  RESUBMIT: "증빙 재제출",
-  DELETE: "삭제",
-  POINT_ADD: "상벌점 등록",
-  POINT_MODIFY: "상벌점 수정",
-  POINT_DELETE: "상벌점 삭제",
-  RECALCULATE: "전체 점수 재계산",
+  SUBMIT: "증빙 제출 (학생)",
+  RESUBMIT: "증빙 재제출 (학생)",
+  SUBMISSION_DELETE: "증빙 삭제 (학생)",
+  APPEAL_SUBMIT: "이의신청 접수 (학생)",
+  APPROVE: "심사 승인 (교원)",
+  REJECT: "심사 반려 (교원)",
+  REQUEST_RESUBMIT: "재제출 요청 (교원)",
+  SCORE_MODIFY: "점수 수정 (교원)",
+  APPEAL_PROCESS: "이의신청 재심사 (교원)",
+  APPEAL_APPROVE: "이의신청 인용/승인 (교원)",
+  APPEAL_REJECT: "이의신청 기각/반려 (교원)",
+  POINT_ADD: "상벌점 등록 (교원)",
+  POINT_MODIFY: "상벌점 수정 (교원)",
+  POINT_DELETE: "상벌점 삭제 (교원)",
+  USER_CREATE: "사용자 등록 (관리자)",
+  USER_UPDATE: "사용자 수정 (관리자)",
+  USER_DELETE: "사용자 삭제대기 (관리자)",
+  USER_RESTORE: "사용자 복구 (관리자)",
+  USER_PURGE: "사용자 영구삭제 (관리자)",
+  BATCH_REGISTER: "일괄 배치 등록 (관리자)",
+  CRITERIA_CREATE: "평가 기준 생성 (관리자)",
+  CRITERIA_UPDATE: "평가 기준 수정 (관리자)",
+  CRITERIA_DELETE: "평가 기준 삭제 (관리자)",
+  CRITERIA_COPY: "평가 기준 복제 (관리자)",
+  YEAR_CREATE: "학년도 생성 (관리자)",
+  YEAR_STATUS_CHANGE: "학년도 상태 변경 (관리자)",
+  RECALCULATE: "전체 점수 재계산 (관리자)",
+  LOGIN: "시스템 로그인",
 };
 
 function formatActor(log: any): string {
@@ -65,9 +82,17 @@ export default function AuditPage() {
       <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => {
         event.preventDefault();
         if (draft.start_date && draft.end_date && draft.start_date > draft.end_date) { setValidation("종료일은 시작일 이후여야 합니다."); return; }
-        setValidation(""); setFilters({ ...draft, action: draft.action.trim(), user_id: draft.user_id.trim() }); setPage(1); setRevision((value) => value + 1);
+        setValidation(""); setFilters({ ...draft, action: draft.action.trim(), role: draft.role.trim(), user_id: draft.user_id.trim() }); setPage(1); setRevision((value) => value + 1);
       }}>
         <label className="space-y-1 text-sm">행위자 계정 ID<input className={specInput} value={draft.user_id} onChange={(event) => setDraft({ ...draft, user_id: event.target.value })} placeholder="아이디 또는 이름" /></label>
+        <label className="space-y-1 text-sm">행위자 역할
+          <select className={specInput} value={draft.role} onChange={(event) => setDraft({ ...draft, role: event.target.value })}>
+            <option value="">전체 역할</option>
+            <option value="student">학생 (Student)</option>
+            <option value="teacher">교원 (Teacher)</option>
+            <option value="admin">관리자 (Admin)</option>
+          </select>
+        </label>
         <label className="space-y-1 text-sm">액션
           <select className={specInput} value={draft.action} onChange={(event) => setDraft({ ...draft, action: event.target.value })}>
             <option value="">전체 액션</option>
@@ -90,10 +115,24 @@ export default function AuditPage() {
             const rawAction = String(log.action || log.actionType || "");
             const actionLabel = ACTION_LABELS[rawAction] ? `${ACTION_LABELS[rawAction]} (${rawAction})` : rawAction;
             const detailVal = log.details ?? (log as any).changes ?? (log as any).reason;
+            const actorRole = log.actor_role || log.actorRole || log.role;
             return (
               <li key={log.log_id || log.logId || log.id} className="space-y-2 py-4">
-                <div className="flex flex-wrap justify-between gap-2 text-sm">
-                  <strong>{actionLabel} · {formatActor(log)}</strong>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <strong>{actionLabel} · {formatActor(log)}</strong>
+                    {actorRole && (
+                      <span className={`inline-block rounded px-1.5 py-0.5 text-xs font-semibold ${
+                        actorRole === "student" ? "bg-emerald-100 text-emerald-800" :
+                        actorRole === "teacher" ? "bg-blue-100 text-blue-800" :
+                        actorRole === "admin" ? "bg-purple-100 text-purple-800" : "bg-gray-100 text-gray-800"
+                      }`}>
+                        {actorRole === "student" ? "학생" :
+                         actorRole === "teacher" ? "교원" :
+                         actorRole === "admin" ? "관리자" : "시스템"}
+                      </span>
+                    )}
+                  </div>
                   <time dateTime={log.created_at || log.createdAt} className="text-ink-soft">{String(log.created_at || log.createdAt || "").replace("T", " ").slice(0, 19)}</time>
                 </div>
                 <p className="text-xs text-ink-soft">로그 #{log.log_id || log.logId || log.id} · IP {log.ip_address || log.ipAddress || "미기록"}</p>

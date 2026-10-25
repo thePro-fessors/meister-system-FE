@@ -204,7 +204,7 @@ export interface AuditLogs {
     hasNext?: boolean;
     hasPrev?: boolean;
   };
-  logs: { log_id?: number | string; logId?: number | string; id?: string; user_id?: string; action?: string; actionType?: string; ip_address?: string; ipAddress?: string; created_at?: string; createdAt?: string; details?: unknown; changes?: unknown; reason?: unknown }[];
+  logs: { log_id?: number | string; logId?: number | string; id?: string; user_id?: string; actor_role?: string; actorRole?: string; role?: string; action?: string; actionType?: string; ip_address?: string; ipAddress?: string; created_at?: string; createdAt?: string; details?: unknown; changes?: unknown; reason?: unknown }[];
 }
 export interface AnomalyReport {
   anomaly_count: number;

@@ -54,6 +54,9 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
           link: s.linkUrl || s.link || s.link_url || undefined,
           status: s.status || "제출완료",
           score: s.grantedScore !== null && s.grantedScore !== undefined ? Number(s.grantedScore) : (s.score !== null && s.score !== undefined ? Number(s.score) : undefined),
+          recommendedScore: s.recommendedScore !== null && s.recommendedScore !== undefined ? Number(s.recommendedScore) : undefined,
+          scoringTypeName: s.scoringTypeName || undefined,
+          scoringRules: s.scoringRules || undefined,
           maxScore: s.maxScore !== null && s.maxScore !== undefined ? Number(s.maxScore) : undefined,
           teacherComment: s.teacherComment || s.teacher_comment || undefined,
           submittedAt: s.submittedAt ? String(s.submittedAt).slice(0, 10) : (s.createdAt ? String(s.createdAt).slice(0, 10) : actDate),
@@ -390,6 +393,25 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
 
               {mode === "approve" || alreadyApproved ? (
                 <div className="space-y-3">
+                  {submission.recommendedScore !== undefined && (
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-2 text-xs text-emerald-900">
+                      <span className="flex items-center gap-1.5 font-medium">
+                        <Sparkles size={14} className="text-emerald-600 shrink-0" />
+                        {submission.scoringTypeName || item?.scoringType || "배점 기준"} 자동 산출 추천 점수: <strong>{submission.recommendedScore}점</strong> (최대 {maxScore}점)
+                      </span>
+                      <button
+                        type="button"
+                        disabled={!editable || busy}
+                        onClick={() => {
+                          setScoreInput(String(submission.recommendedScore));
+                          setError(null);
+                        }}
+                        className="rounded bg-emerald-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+                      >
+                        추천 점수 적용
+                      </button>
+                    </div>
+                  )}
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <label className="block text-sm font-medium text-ink">인정 점수 (최대 {maxScore}점)</label>
                     <div className="flex flex-wrap items-center gap-1.5 text-xs">

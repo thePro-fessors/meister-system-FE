@@ -117,6 +117,9 @@ function mapSubmissionFromBackend(item: any, userIdByStudentId?: Map<number, str
     description: item.description || "",
     status: item.status || "제출완료",
     score: (item.score ?? item.grantedScore ?? item.granted_score) != null ? Number(item.score ?? item.grantedScore ?? item.granted_score) : undefined,
+    recommendedScore: (item.recommendedScore ?? item.recommended_score) != null ? Number(item.recommendedScore ?? item.recommended_score) : undefined,
+    scoringTypeName: item.scoringTypeName ?? item.scoring_type_name,
+    scoringRules: item.scoringRules ?? item.scoring_rules ?? [],
     teacherComment: item.teacherComment ?? item.teacher_comment,
     submittedAt: (item.submittedAt ?? item.createdAt ?? item.created_at) ? String(item.submittedAt ?? item.createdAt ?? item.created_at).slice(0, 10) : new Date().toISOString().slice(0, 10),
     reviewedAt: item.reviewedAt ? String(item.reviewedAt).slice(0, 10) : undefined,
@@ -186,6 +189,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                 active: it.isActive !== false,
                 requiresEvidence: Boolean(it.requiresEvidence),
                 description: it.subject || it.department || "",
+                scoringRules: it.scoringRules || it.scoring_rules || [],
+                ruleConfig: it.ruleConfig || it.rule_config || null,
               })),
             };
             if (areasByGrade[gr]) areasByGrade[gr].push(areaItem);

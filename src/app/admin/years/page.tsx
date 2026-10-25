@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Copy, Plus } from "lucide-react";
+import { Copy, Plus, Trash2 } from "lucide-react";
 import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { apiClient, apiErrorMessage } from "@/lib/api-client";
@@ -91,6 +91,24 @@ export default function AdminYearsPage() {
       });
       await Promise.all([refresh(), loadYears()]);
       setNotice(`${year}학년도가 비활성화되었습니다.`);
+    } catch (err) {
+      setError(apiErrorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function deleteYear(year: number) {
+    if (!window.confirm(`${year}학년도를 삭제하시겠습니까? 설정된 평가 기준도 함께 삭제됩니다.`)) return;
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      await apiClient.request(`/api/years/${year}`, {
+        method: "DELETE",
+      });
+      await Promise.all([refresh(), loadYears()]);
+      setNotice(`${year}학년도가 삭제되었습니다.`);
     } catch (err) {
       setError(apiErrorMessage(err));
     } finally {
@@ -206,6 +224,20 @@ export default function AdminYearsPage() {
                 >
                   비활성화
                 </button>
+              )}
+              {!c.active ? (
+                <button
+                  onClick={() => deleteYear(c.year)}
+                  disabled={busy}
+                  title="학년도 삭제"
+                  className="inline-flex items-center gap-1 rounded-md border border-alert/30 px-2.5 py-1.5 text-xs font-medium text-alert hover:bg-alert-soft disabled:opacity-50"
+                >
+                  <Trash2 size={13} strokeWidth={1.75} /> 삭제
+                </button>
+              ) : (
+                <span title="활성화된 학년도는 삭제할 수 없습니다" className="inline-flex items-center px-2 py-1.5 text-xs text-ink-soft opacity-60">
+                  삭제 불가(활성)
+                </span>
               )}
             </div>
           </div>

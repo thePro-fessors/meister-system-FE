@@ -23,6 +23,9 @@ export interface User {
   classNo?: number; // 학생
   number?: number; // 학생
   homeroom?: string; // 교사 담당 학급, 예: "1-2"
+  position?: string;
+  department?: string;
+  subject?: string;
   teacherDuty?: TeacherDuty;
   teacherScope?: TeacherScope;
   totalScore?: number;
@@ -59,6 +62,12 @@ export type ScoringType =
   | "최대점제한형"
   | "최상위인정형";
 
+export interface ScoringRule {
+  ruleId?: number;
+  conditionValue: string;
+  score: number;
+}
+
 export interface EvalItem {
   id: string;
   name: string; // 평가 항목, 예: 자격증
@@ -68,6 +77,8 @@ export interface EvalItem {
   requiresEvidence: boolean;
   description?: string; // 산정 방식 설명
   autoCalculated?: boolean;
+  scoringRules?: ScoringRule[];
+  ruleConfig?: any;
 }
 
 export interface AreaCriteria {
@@ -113,6 +124,9 @@ export interface Submission {
   description: string;
   status: SubmissionStatus;
   score?: number;
+  recommendedScore?: number;
+  scoringTypeName?: string;
+  scoringRules?: ScoringRule[];
   teacherComment?: string;
   submittedAt: string;
   reviewedAt?: string;
@@ -186,6 +200,64 @@ export interface AdminUsersResponse {
   total: number;
   deletedCount: number;
   deleted_count: number;
+  page: number;
+  limit: number;
+}
+
+export interface AdminStudentItem {
+  student_id: number;
+  studentId?: number;
+  uuid: string | null;
+  name: string;
+  email: string;
+  status: number;
+  is_deleted: boolean;
+  isDeleted?: boolean;
+  grade?: number | null;
+  class_no?: number | null;
+  classNo?: number | null;
+  student_no?: number | null;
+  studentNo?: number | null;
+  year_id?: number | null;
+  user_account_id?: string | null;
+  has_account?: boolean;
+  hasAccount?: boolean;
+}
+
+export interface AdminStudentsResponse {
+  students: AdminStudentItem[];
+  total: number;
+  deletedCount: number;
+  deleted_count?: number;
+  page: number;
+  limit: number;
+  year?: number;
+}
+
+export interface AdminTeacherItem {
+  teachers_id: number;
+  teacherId?: number;
+  uuid: string | null;
+  name: string;
+  email: string;
+  subject?: string | null;
+  department?: string | null;
+  position?: string | null;
+  grade?: number | null;
+  class_no?: number | null;
+  classNo?: number | null;
+  is_deleted: boolean;
+  isDeleted?: boolean;
+  user_account_id?: string | null;
+  has_account?: boolean;
+  hasAccount?: boolean;
+}
+
+export interface AdminTeachersResponse {
+  teachers: AdminTeacherItem[];
+  total: number;
+  deletedCount: number;
+  deleted_count?: number;
   page: number;
   limit: number;
 }

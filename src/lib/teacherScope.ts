@@ -12,6 +12,9 @@ export function isInTeacherScope(teacher: User, student: User): boolean {
   if (teacher.role !== "teacher" || student.role !== "student") return false;
   const scope = teacher.teacherScope;
   if (!scope) {
+    if (teacher.teacherDuty === "grade_head" || teacher.position === "학년부장") {
+      return teacher.grade !== undefined && teacher.grade === student.grade;
+    }
     return !!teacher.homeroom &&
       (!teacher.teacherDuty || teacher.teacherDuty === "homeroom" || teacher.teacherDuty === "assistant_homeroom") &&
       matchesClassroom(teacher.homeroom, student);

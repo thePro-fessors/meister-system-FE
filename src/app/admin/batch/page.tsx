@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { PageHeader } from "@/components/AppShell";
 import { SpecAdminPanel, TaskStatus, specButton, specInput, useApiTask } from "@/components/SpecAdminPanel";
 import { ApiError, apiClient, apiErrorMessage, getApiToken, type BatchReport } from "@/lib/api-client";
@@ -178,6 +179,14 @@ export default function BatchPage() {
           try {
             const data = JSON.parse(event.data);
             if (data.status === "NOT_FOUND") {
+              if (pollCount < 3) {
+                if (es) {
+                  es.close();
+                  es = null;
+                }
+                void pollProgress();
+                return;
+              }
               closeStream();
               reject(new ApiError("배치 작업을 찾을 수 없습니다.", 404, "NOT_FOUND"));
               return;
@@ -222,7 +231,23 @@ export default function BatchPage() {
   }
 
   return <>
-    <PageHeader eyebrow="관리자" title="명단 일괄 등록" description="학생, NEIS 학적 및 교원 명단을 서버에 일괄 등록합니다." />
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <PageHeader eyebrow="관리자" title="명단 일괄 등록" description="학생, NEIS 학적 및 교원 명단을 서버에 일괄 등록합니다." />
+      <div className="flex items-center gap-2">
+        <Link
+          href="/admin/users?tab=students"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-paper-raised px-3 py-2 text-xs font-semibold text-ink hover:bg-paper transition-colors"
+        >
+          학생 개별 등록 · 수정 →
+        </Link>
+        <Link
+          href="/admin/users?tab=teachers"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-paper-raised px-3 py-2 text-xs font-semibold text-ink hover:bg-paper transition-colors"
+        >
+          교원 개별 등록 · 수정 →
+        </Link>
+      </div>
+    </div>
     <SpecAdminPanel>
       <form className="space-y-4" onSubmit={(event) => {
         event.preventDefault();

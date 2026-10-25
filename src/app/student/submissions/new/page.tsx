@@ -8,7 +8,7 @@ import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { AREA_NAMES, AreaName, EvalItem } from "@/lib/types";
 import { classifySubmission } from "@/lib/ai";
-import { apiClient } from "@/lib/api-client";
+import { apiClient, apiErrorMessage } from "@/lib/api-client";
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 const fieldClass = "w-full rounded-md border border-line bg-white px-3 py-2.5 text-sm outline-none focus:border-brass focus:ring-1 focus:ring-brass";
@@ -75,6 +75,74 @@ export default function NewSubmissionPage() {
   const item = items.find((i) => i.id === itemId);
   const ready = user?.role === "student" && !!year && !!grade;
 
+  const previewScore = useMemo(() => {
+    if (!item) return null;
+    const max = item.maxScore || 10;
+    const rules = item.scoringRules || [];
+    const scType = item.scoringType;
+    if (scType === "고정점수형") {
+      if (rules.length && detail.trim()) {
+        const match = rules.find((r) => detail.toLowerCase().includes(r.conditionValue.toLowerCase()));
+        if (match) return Math.min(match.score, max);
+      }
+      return max;
+    }
+    if (scType === "등급환산형") {
+      const m = detail.match(/\b([SABCDsabcd])\b|([1-9])\s*등급/);
+      if (m) {
+        const gr = (m[1] ? m[1].toUpperCase() : `${m[2]}등급`);
+        const match = rules.find((r) => r.conditionValue.toUpperCase() === gr);
+        if (match) return Math.min(match.score, max);
+        const defs: Record<string, number> = { S: 1.0, A: 0.8, B: 0.6, C: 0.4, D: 0.2, "1등급": 1.0, "2등급": 0.8, "3등급": 0.6 };
+        return Math.min(Math.round(max * (defs[gr] || 0.5) * 10) / 10, max);
+      }
+      return null;
+    }
+    if (scType === "구간점수형") {
+      const clean = detail.replace(/\d{4}[-./]\d{1,2}[-./]\d{1,2}/g, "");
+      const nums = clean.match(/\d+(?:\.\d+)?/g);
+      if (nums && nums.length > 0) {
+        const val = parseFloat(nums[nums.length - 1]);
+        for (const r of rules) {
+          const c = r.conditionValue.replace(/\s/g, "");
+          if (c.includes(">=") || c.includes("이상")) {
+            const mNum = parseFloat(c.replace(/[^0-9.]/g, ""));
+            if (val >= mNum) return Math.min(r.score, max);
+          } else if (c.includes("<=") || c.includes("이하")) {
+            const mNum = parseFloat(c.replace(/[^0-9.]/g, ""));
+            if (val <= mNum) return Math.min(r.score, max);
+          } else if (c.includes("~") || c.includes("-")) {
+            const parts = c.split(/[~-]/).map((x) => parseFloat(x));
+            if (parts.length === 2 && val >= parts[0] && val <= parts[1]) return Math.min(r.score, max);
+          }
+        }
+        return Math.min(val, max);
+      }
+      return null;
+    }
+    if (scType === "시간계산형") {
+      const m = detail.match(/(\d+(?:\.\d+)?)\s*(?:시간|hr|hours|h)?/i);
+      if (m) {
+        const hrs = parseFloat(m[1]);
+        const rate = item.ruleConfig?.unit_rate || (rules[0]?.score ?? 0.3);
+        return Math.min(Math.round(hrs * rate * 10) / 10, max);
+      }
+      return null;
+    }
+    if (scType === "감점형") {
+      const m = detail.match(/\d+/);
+      const cnt = m ? parseInt(m[0]) : 1;
+      const penalty = item.ruleConfig?.penalty_per_unit || (rules[0]?.score ?? 2.0);
+      return Math.max(0, Math.round((max - cnt * penalty) * 10) / 10);
+    }
+    if (scType === "가산점형") {
+      const base = item.ruleConfig?.base_score || 0;
+      const bonus = item.ruleConfig?.bonus || (rules[0]?.score ?? 5.0);
+      return Math.min(base + bonus, max);
+    }
+    return max;
+  }, [item, detail]);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (saving.current) return;
@@ -109,8 +177,8 @@ export default function NewSubmissionPage() {
         submittedAt: new Date().toISOString().slice(0, 10),
       });
       setDone(true);
-    } catch {
-      setError("제출하지 못했습니다. 입력 내용을 확인하고 다시 시도해 주세요.");
+    } catch (err) {
+      setError(apiErrorMessage(err) || "제출하지 못했습니다. 입력 내용을 확인하고 다시 시도해 주세요.");
     } finally {
       saving.current = false;
       setBusy(false);
@@ -137,6 +205,45 @@ export default function NewSubmissionPage() {
             <option value="">선택하세요</option>{items.map((i) => <option key={i.id} value={i.id}>{i.name} (최대 {i.maxScore}점)</option>)}
           </select></label>
         </div>
+        {item && (
+          <div className="rounded-md border border-line bg-paper px-3 py-2 text-xs space-y-1.5">
+            <div className="flex flex-wrap items-center justify-between gap-1">
+              <span className="font-semibold text-ink">
+                배점 유형: <span className="text-brass">{item.scoringType}</span> (최대 {item.maxScore}점)
+              </span>
+              {previewScore !== null && (
+                <span className="font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                  예상 인정 점수: {previewScore}점
+                </span>
+              )}
+            </div>
+            {item.scoringType === "등급환산형" && (
+              <div className="flex flex-wrap items-center gap-1.5 text-ink-soft">
+                <span>등급 퀵 선택:</span>
+                {(item.scoringRules?.length ? item.scoringRules.map((r) => r.conditionValue) : ["S", "A", "B", "C"]).map((gr) => (
+                  <button
+                    key={gr}
+                    type="button"
+                    onClick={() => setDetail((prev) => prev ? `${prev} ${gr}등급` : `${gr}등급`)}
+                    className="rounded border border-line bg-white px-2 py-0.5 font-medium text-ink hover:border-brass hover:bg-brass-soft/40"
+                  >
+                    {gr}
+                  </button>
+                ))}
+              </div>
+            )}
+            {item.scoringType === "구간점수형" && item.scoringRules && item.scoringRules.length > 0 && (
+              <div className="text-ink-soft">
+                성적 구간표: {item.scoringRules.map((r) => `${r.conditionValue}: ${r.score}점`).join(" / ")}
+              </div>
+            )}
+            {item.scoringType === "시간계산형" && (
+              <div className="text-ink-soft">
+                활동 시간(시간 단위)을 세부 항목 정보에 숫자로 입력하세요. (시간 × {item.ruleConfig?.unit_rate || item.scoringRules?.[0]?.score || 0.3}점)
+              </div>
+            )}
+          </div>
+        )}
         <label className="block text-sm font-medium">세부 항목 정보<input required className={fieldClass} value={detail} onChange={(e) => setDetail(e.target.value)} placeholder="예: 전공 프로젝트, 자격증, 봉사활동" /></label>
         <label className="block text-sm font-medium">활동일<input required type="date" className={fieldClass} value={activityDate} onChange={(e) => setActivityDate(e.target.value)} /></label>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -150,7 +257,14 @@ export default function NewSubmissionPage() {
         <p className="text-xs text-ink-soft">{item?.requiresEvidence ? "파일 또는 링크 증빙 필수." : "증빙은 선택 사항입니다."}</p>
         <label className="block text-sm font-medium">설명<textarea required rows={4} className={fieldClass} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
         {error && <p role="alert" className="rounded-md bg-alert-soft p-3 text-sm text-alert">{error}</p>}
-        <button disabled={busy || !ready} type="submit" className="rounded-md bg-navy px-6 py-2.5 text-sm font-medium text-white disabled:opacity-50">{busy ? "등록 중..." : "증빙자료 제출"}</button>
+        <div className="flex items-center gap-4">
+          <button disabled={busy || !ready} type="submit" className="rounded-md bg-navy px-6 py-2.5 text-sm font-medium text-white disabled:opacity-50">{busy ? "등록 중..." : "증빙자료 제출"}</button>
+          {previewScore !== null && (
+            <span className="text-sm font-semibold text-emerald-700">
+              실시간 예상 점수: {previewScore}점 / {item?.maxScore}점
+            </span>
+          )}
+        </div>
       </fieldset>
       <aside className="space-y-4">
         <div className="rounded-lg border border-brass/40 bg-brass-soft/40 p-5">

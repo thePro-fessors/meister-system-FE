@@ -20,6 +20,47 @@ const SCORING_TYPES: ScoringType[] = [
   "최상위인정형",
 ];
 
+const SCORING_TYPE_CODE_MAP: Record<string, number> = {
+  "고정점수형": 1,
+  "등급환산형": 2,
+  "구간점수형": 3,
+  "시간계산형": 4,
+  "감점형": 5,
+  "가산점형": 6,
+  "최대점제한형": 7,
+  "최상위인정형": 8,
+  "누적합산형": 1,
+  "최고점수반영형": 8,
+};
+
+function getDefaultRulesForType(type: ScoringType, maxScore: number) {
+  if (type === "등급환산형") {
+    return [
+      { conditionValue: "S", score: maxScore },
+      { conditionValue: "A", score: Math.round(maxScore * 0.8 * 10) / 10 },
+      { conditionValue: "B", score: Math.round(maxScore * 0.6 * 10) / 10 },
+      { conditionValue: "C", score: Math.round(maxScore * 0.4 * 10) / 10 },
+    ];
+  }
+  if (type === "구간점수형") {
+    return [
+      { conditionValue: ">=800", score: maxScore },
+      { conditionValue: "700~795", score: Math.round(maxScore * 0.8 * 10) / 10 },
+      { conditionValue: "600~695", score: Math.round(maxScore * 0.6 * 10) / 10 },
+    ];
+  }
+  if (type === "시간계산형") {
+    return [{ conditionValue: "시간당", score: 0.3 }];
+  }
+  if (type === "감점형") {
+    return [{ conditionValue: "1회당", score: 2.0 }];
+  }
+  if (type === "가산점형") {
+    return [{ conditionValue: "입상1건당", score: 3.0 }];
+  }
+  return [];
+}
+
 export default function AdminCriteriaPage() {
   const { criteria, submissions, updateCriteria, refresh } = useData();
   const [error, setError] = useState("");
@@ -32,6 +73,9 @@ export default function AdminCriteriaPage() {
 
   const gradeCriteria = yearCriteria?.gradeCriteria.find((g) => g.grade === grade);
   const patchTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  const [editingRulesItem, setEditingRulesItem] = useState<{ areaName: string; item: EvalItem } | null>(null);
+  const [ruleDrafts, setRuleDrafts] = useState<Array<{ conditionValue: string; score: number }>>([]);
 
   function schedulePatch(key: string, fn: () => Promise<void>) {
     if (patchTimersRef.current[key]) {
@@ -75,6 +119,8 @@ export default function AdminCriteriaPage() {
             body: {
               name: patch.name,
               maxScore: patch.maxScore,
+              scoringType: patch.scoringType ? SCORING_TYPE_CODE_MAP[patch.scoringType] : undefined,
+              scoringRules: patch.scoringRules,
               isActive: patch.active,
               requiresEvidence: patch.requiresEvidence,
             },
@@ -311,6 +357,18 @@ export default function AdminCriteriaPage() {
                             </option>
                           ))}
                         </select>
+                        {["등급환산형", "구간점수형", "시간계산형", "감점형", "가산점형"].includes(item.scoringType) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingRulesItem({ areaName: area.area, item });
+                              setRuleDrafts(item.scoringRules?.length ? [...item.scoringRules] : getDefaultRulesForType(item.scoringType, item.maxScore));
+                            }}
+                            className="mt-1 block text-left text-xs font-medium text-brass hover:underline"
+                          >
+                            규칙 설정 ({item.scoringRules?.length || 0}건)
+                          </button>
+                        )}
                       </td>
                       <td>
                         <input
@@ -384,6 +442,81 @@ export default function AdminCriteriaPage() {
           </tbody>
         </table>
       </div>
+
+      {editingRulesItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-lg rounded-lg border border-line bg-paper-raised p-6 shadow-xl">
+            <h3 className="font-display text-base font-semibold text-ink">
+              {editingRulesItem.item.name} · 배점 규칙 설정
+            </h3>
+            <p className="mt-1 text-xs text-ink-soft">
+              배점 유형: {editingRulesItem.item.scoringType} (항목 최대점 {editingRulesItem.item.maxScore}점)
+            </p>
+            <div className="mt-4 max-h-60 overflow-y-auto space-y-2">
+              {ruleDrafts.map((rd, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <input
+                    placeholder="조건값 (예: S, >=800, 시간당)"
+                    value={rd.conditionValue}
+                    onChange={(e) => {
+                      const updated = [...ruleDrafts];
+                      updated[idx].conditionValue = e.target.value;
+                      setRuleDrafts(updated);
+                    }}
+                    className="flex-1 rounded-md border border-line px-2 py-1 text-xs outline-none focus:border-brass"
+                  />
+                  <input
+                    type="number"
+                    step="any"
+                    placeholder="부여 점수"
+                    value={rd.score}
+                    onChange={(e) => {
+                      const updated = [...ruleDrafts];
+                      updated[idx].score = Number(e.target.value);
+                      setRuleDrafts(updated);
+                    }}
+                    className="w-20 rounded-md border border-line px-2 py-1 text-xs outline-none focus:border-brass"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setRuleDrafts(ruleDrafts.filter((_, i) => i !== idx))}
+                    className="text-ink-soft hover:text-alert p-1"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setRuleDrafts([...ruleDrafts, { conditionValue: "", score: 0 }])}
+              className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-brass hover:underline"
+            >
+              <Plus size={12} /> 규칙 행 추가
+            </button>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setEditingRulesItem(null)}
+                className="rounded-md border border-line px-3 py-1.5 text-xs font-medium text-ink-soft hover:bg-paper"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  const cleaned = ruleDrafts.filter((r) => r.conditionValue.trim());
+                  await patchItem(editingRulesItem.areaName, editingRulesItem.item.id, { scoringRules: cleaned });
+                  setEditingRulesItem(null);
+                }}
+                className="rounded-md bg-navy px-3 py-1.5 text-xs font-medium text-white hover:bg-ink"
+              >
+                규칙 저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
