@@ -208,7 +208,7 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
     setRemoteSubmission((prev) => prev ? { ...prev, status: "인정완료", score, teacherComment: comment.trim() || "제출 자료를 확인하여 인정 처리했습니다." } : prev);
     setNotice("저장했습니다. 심사 결과가 성공적으로 반영되었습니다.");
     setComment("");
-    } catch { setError("저장하지 못했습니다. 다시 시도해 주세요."); }
+    } catch (e) { setError(apiErrorMessage(e)); }
     finally { saving.current = false; setBusy(false); }
   }
 
@@ -233,7 +233,7 @@ export default function ReviewPage({ params }: { params: Promise<{ id: string }>
     setRemoteSubmission((prev) => prev ? { ...prev, status: rejectStatus, score: undefined, teacherComment: comment.trim() } : prev);
     setNotice(`${rejectStatus} 처리했습니다.`);
     setComment("");
-    } catch { setError("처리하지 못했습니다. 다시 시도해 주세요."); }
+    } catch (e) { setError(apiErrorMessage(e)); }
     finally { saving.current = false; setBusy(false); }
   }
 

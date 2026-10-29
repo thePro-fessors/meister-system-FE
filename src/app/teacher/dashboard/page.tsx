@@ -69,7 +69,7 @@ export default function TeacherDashboard() {
 
   const studentName = (id: string) => users.find((u) => u.id === id)?.name ?? id;
 
-  const displayPending = serverDashboard?.pendingCount ?? pending.length;
+  const displayPending = pending.length > 0 ? pending.length : (serverDashboard?.pendingCount ?? 0);
   const displayResubmitted = serverDashboard?.resubmittedCount ?? resubmitted.length;
   const displayUnscored = serverDashboard?.unscoredCount ?? unscored.length;
   const displayStudentCount = serverDashboard?.studentCount ?? scopedStudentIds.size;
@@ -83,6 +83,7 @@ export default function TeacherDashboard() {
         area: s.area,
         itemName: s.itemName,
         status: s.status,
+        canDirectlyReview: user?.role === "admin" || scoped.some((item) => String(item.id).replace(/^sub-/, "") === String(s.id ?? s.submissionId).replace(/^sub-/, "")),
       }))
     : recent.map((s) => ({
         id: s.id,
@@ -91,6 +92,7 @@ export default function TeacherDashboard() {
         area: s.area,
         itemName: s.itemName,
         status: s.status,
+        canDirectlyReview: true,
       }));
 
   return (
@@ -116,7 +118,14 @@ export default function TeacherDashboard() {
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <p className="font-semibold text-ink">{s.studentName}</p>
-                <p className="text-xs text-ink-soft">{s.area} · {s.itemName}</p>
+                <p className="text-xs text-ink-soft flex items-center gap-1.5">
+                  <span>{s.area} · {s.itemName}</span>
+                  {!s.canDirectlyReview && (
+                    <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-medium text-stone-600">
+                      교과전담 심사
+                    </span>
+                  )}
+                </p>
               </div>
               <StatusPill label={s.status} />
             </div>
@@ -126,7 +135,7 @@ export default function TeacherDashboard() {
                 href={`/teacher/review/${s.id}`}
                 className="inline-flex min-h-11 items-center rounded-lg bg-brass-soft px-3.5 text-xs font-semibold text-brass"
               >
-                검토하기
+                {s.canDirectlyReview ? "검토하기" : "열람하기"}
               </Link>
             </div>
           </article>
@@ -158,14 +167,21 @@ export default function TeacherDashboard() {
                 <td className="text-ink-soft">{s.submittedAt}</td>
                 <td className="font-medium text-ink">{s.studentName}</td>
                 <td className="text-ink-soft">
-                  {s.area} · {s.itemName}
+                  <div className="flex items-center gap-1.5">
+                    <span>{s.area} · {s.itemName}</span>
+                    {!s.canDirectlyReview && (
+                      <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[11px] font-medium text-stone-600">
+                        교과전담 심사
+                      </span>
+                    )}
+                  </div>
                 </td>
                 <td>
                   <StatusPill label={s.status} />
                 </td>
                 <td>
                   <Link href={`/teacher/review/${s.id}`} className="text-sm text-brass hover:underline">
-                    검토하기
+                    {s.canDirectlyReview ? "검토하기" : "열람하기"}
                   </Link>
                 </td>
               </tr>

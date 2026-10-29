@@ -53,6 +53,9 @@ export default function TeacherPointsPage() {
   const studentName = (pStudentId: string, rawId?: string | number, fallbackName?: string) =>
     findStudent(pStudentId, rawId)?.name ?? fallbackName ?? pStudentId;
 
+  const teacherName = (tId?: string, fallbackName?: string) =>
+    fallbackName || users.find((u) => u.id === tId || (u.teacherId && String(u.teacherId) === tId))?.name || "교사";
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     if (!reason.trim()) {
@@ -207,6 +210,7 @@ export default function TeacherPointsPage() {
               <th>점수</th>
               <th>관련 영역</th>
               <th>사유</th>
+              <th>등록 교사</th>
               <th>인증 반영</th>
               <th></th>
             </tr>
@@ -241,6 +245,7 @@ export default function TeacherPointsPage() {
                 </td>
                 <td className="text-ink-soft">{p.reflectedArea || p.relatedArea || "—"}</td>
                 <td className="text-ink">{p.reason}</td>
+                <td className="text-ink-soft">{teacherName(p.teacherId, p.teacherName)}</td>
                 <td className="text-ink-soft">순상점 자동 산정</td>
                 <td>
                   {editingId === p.id ? (
