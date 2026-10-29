@@ -276,18 +276,45 @@ export default function NewSubmissionPage() {
               disabled={busy || !ready}
               onClick={() => {
                 if (aiResult.area) {
-                  setArea(aiResult.area as AreaName);
+                  const aliasMap: Record<string, AreaName> = {
+                    "전문기술역량": "전공역량",
+                    "직업기초능력": "전공역량",
+                    "인성/직업의식": "인성/봉사",
+                    "인문학적 소양": "창체/독서",
+                    "외국어 능력": "외국어역량",
+                  };
+                  const mappedArea = (areaItems[aiResult.area as AreaName] ? aiResult.area : aliasMap[aiResult.area] ?? aiResult.area) as AreaName;
+                  if (areaItems[mappedArea]) {
+                    setArea(mappedArea);
+                  }
                   if (aiResult.itemId) {
-                    setItemId(String(aiResult.itemId));
+                    const exists = areaItems[mappedArea]?.some((i) => i.id === String(aiResult.itemId));
+                    if (exists) {
+                      setItemId(String(aiResult.itemId));
+                    } else if (aiResult.itemName) {
+                      const matched = areaItems[mappedArea]?.find((i) => i.name.includes(aiResult.itemName!));
+                      if (matched) setItemId(matched.id);
+                    }
                   } else if (aiResult.itemName) {
-                    const matched = areaItems[aiResult.area as AreaName]?.find((i) => i.name.includes(aiResult.itemName!));
+                    const matched = areaItems[mappedArea]?.find((i) => i.name.includes(aiResult.itemName!));
                     if (matched) setItemId(matched.id);
                   }
                 }
               }}
               className="mb-2 block w-full rounded-md border border-brass bg-white p-3 text-left text-sm transition-shadow hover:shadow"
             >
-              <div className="font-semibold text-ink">{aiResult.area} · {aiResult.itemName || "추천 항목"}</div>
+              <div className="font-semibold text-ink">
+                {(() => {
+                  const aliasMap: Record<string, string> = {
+                    "전문기술역량": "전공역량",
+                    "직업기초능력": "전공역량",
+                    "인성/직업의식": "인성/봉사",
+                    "인문학적 소양": "창체/독서",
+                    "외국어 능력": "외국어역량",
+                  };
+                  return (areaItems[aiResult.area as AreaName] ? aiResult.area : aliasMap[aiResult.area ?? ""] ?? aiResult.area);
+                })()} · {aiResult.itemName || "추천 항목"}
+              </div>
               {aiResult.reason && <p className="mt-1 text-xs text-ink-soft">{aiResult.reason}</p>}
               <span className="mt-2 inline-block rounded bg-brass/20 px-1.5 py-0.5 text-xs font-medium text-brass">
                 적용하기 {aiResult.confidence ? `(${(aiResult.confidence * 100).toFixed(0)}% 일치)` : ""}
