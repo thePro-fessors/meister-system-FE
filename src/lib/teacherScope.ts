@@ -33,6 +33,11 @@ export function isInTeacherScope(teacher: User, student: User): boolean {
 }
 
 // An area/item assignment is not permission to mutate every resource of a student.
+export function canViewStudent(teacher: User, student: User): boolean {
+  if (teacher.role === "admin" || teacher.role === "teacher") return student.role === "student";
+  return false;
+}
+
 export function canManageStudent(teacher: User, student: User): boolean {
   if (!isInTeacherScope(teacher, student)) return false;
   if (teacher.role === "admin") return true;

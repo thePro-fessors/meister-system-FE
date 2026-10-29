@@ -8,7 +8,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { StatusPill } from "@/components/StatusPill";
-import { canManageStudent } from "@/lib/teacherScope";
+import { canViewStudent } from "@/lib/teacherScope";
 import { canModifyPoint, validPointMagnitude } from "@/lib/point-actions";
 import { AREA_NAMES, AreaName, PointType } from "@/lib/types";
 import { academicYear, matchesStudentId } from "@/lib/grading";
@@ -20,7 +20,7 @@ export default function TeacherPointsPage() {
   const { users, points, addPoint, updatePoint } = useData();
 
   const scopedStudents = useMemo(
-    () => (user ? users.filter((u) => u.role === "student" && canManageStudent(user, u)) : []),
+    () => (user ? users.filter((u) => u.role === "student" && canViewStudent(user, u)) : []),
     [users, user]
   );
 

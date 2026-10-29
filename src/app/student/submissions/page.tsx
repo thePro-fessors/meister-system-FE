@@ -109,9 +109,11 @@ export default function StudentSubmissionsPage() {
     }
     if (!criteria.some((c) => c.year === submission.year && c.active)) { setError("비활성 학년도에는 재제출할 수 없습니다."); return; }
     const normId = (val: string | number) => String(val).replace(/^item-/, "");
-    const item = criteria.find((c) => c.year === submission.year)?.gradeCriteria
-      .find((g) => g.grade === user?.grade)?.areas.find((a) => a.area === submission.area)
-      ?.items.find((i) => normId(i.id) === normId(submission.itemId) || i.name === submission.itemName);
+    const gradeCrit = criteria.find((c) => c.year === submission.year)?.gradeCriteria;
+    const item =
+      (user?.grade ? gradeCrit?.find((g) => g.grade === user.grade) : undefined)?.areas
+        .find((a) => a.area === submission.area)?.items.find((i) => normId(i.id) === normId(submission.itemId) || i.name === submission.itemName) ??
+      gradeCrit?.flatMap((g) => g.areas).find((a) => a.area === submission.area)?.items.find((i) => normId(i.id) === normId(submission.itemId) || i.name === submission.itemName);
     if (!item || item.autoCalculated) { setError("평가 기준을 확인할 수 없거나 자동연동 항목입니다. 관리자에게 문의해 주세요."); return; }
     if (replacement && replacement.size > 50 * 1024 * 1024) { setError("파일은 50MB 이하여야 합니다."); return; }
     if (!draft.detail.trim() || !draft.description.trim() || (item.requiresEvidence && !replacement && !draft.fileName.trim() && !draft.link.trim())) {
@@ -131,6 +133,7 @@ export default function StudentSubmissionsPage() {
     try {
       await updateSubmission(id, {
         detail: draft.detail.trim(),
+        activityDate: submission.activityDate,
         description: draft.description.trim(),
         fileName: replacement?.name ?? (draft.fileName || undefined),
         link: draft.link.trim() || undefined,
@@ -138,8 +141,11 @@ export default function StudentSubmissionsPage() {
         file: replacement || undefined,
       } as any);
       setEditing(null);
-      setNotice("보완 자료를 성공적으로 재제출했습니다.");
-    } catch { setError("재제출하지 못했습니다. 다시 시도해 주세요."); }
+      setNotice("보완 자료를 성공적으로 재제출했습니다. 검토 대기 상태로 전환되었습니다.");
+      if (status === "재제출요청") setStatus("");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "재제출하지 못했습니다. 다시 시도해 주세요.");
+    }
     finally { saving.current = false; setBusy(false); }
   }
 

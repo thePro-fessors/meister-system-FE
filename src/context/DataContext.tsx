@@ -231,7 +231,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       } else {
         // 교사/관리자 권한: 담당 학생 목록 조회 후 필요한 제출물 및 상벌점 조회 (파라미터 없는 400 호출 방지)
         try {
-          const studentsRes = await apiClient.request<any[]>("/api/teacher/students", { method: "GET" });
+          const studentsRes = await apiClient.request<any[]>("/api/teacher/students", { method: "GET", query: { scope: "all" } });
           if (Array.isArray(studentsRes)) {
             const mappedUsers: User[] = studentsRes.map((st: any) => {
               const sid = Number(st.studentId ?? st.id);
@@ -271,7 +271,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
             // 상벌점이 있는 학생 목록 조회 후 상벌점 내역 병렬 로드
             const pointStudentsRes = await apiClient
-              .request<any[]>("/api/teacher/students", { method: "GET", query: { hasPoints: "true" } })
+              .request<any[]>("/api/teacher/students", { method: "GET", query: { hasPoints: "true", scope: "all" } })
               .catch(() => []);
             const pointStudentIds = new Set<number>(
               [
@@ -366,26 +366,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       });
     } else {
       // Student resubmit
-      let body: FormData | any;
-      if (patch.file) {
-        const formData = new FormData();
-        if (patch.detail) formData.append("detail", patch.detail);
-        if (patch.activityDate) formData.append("activity_date", patch.activityDate);
-        if (patch.description) formData.append("description", patch.description);
-        if (patch.link) formData.append("link_url", patch.link);
-        formData.append("file", patch.file);
-        body = formData;
-      } else {
-        body = {
-          detail: patch.detail,
-          activity_date: patch.activityDate,
-          description: patch.description,
-          link_url: patch.link,
-        };
-      }
+      const formData = new FormData();
+      if (patch.detail !== undefined) formData.append("detail", patch.detail);
+      if (patch.activityDate !== undefined) formData.append("activity_date", patch.activityDate);
+      if (patch.description !== undefined) formData.append("description", patch.description);
+      if (patch.link !== undefined) formData.append("link_url", patch.link);
+      if (patch.file) formData.append("file", patch.file);
+
       await apiClient.request(`/api/submissions/${targetId}/resubmit`, {
         method: "PATCH",
-        body,
+        body: formData,
       });
     }
     await refresh();

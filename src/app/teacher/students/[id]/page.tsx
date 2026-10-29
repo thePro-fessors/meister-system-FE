@@ -9,7 +9,7 @@ import { GradeBadge } from "@/components/GradeBadge";
 import { StatusPill } from "@/components/StatusPill";
 import { academicYear, computeAreaResults, matchesStudentId } from "@/lib/grading";
 import { useAuth } from "@/context/AuthContext";
-import { canManageStudent, isSubmissionOfStudent } from "@/lib/teacherScope";
+import { canViewStudent, isSubmissionOfStudent } from "@/lib/teacherScope";
 import { DeletePointButton } from "@/components/DeletePointButton";
 import { apiClient } from "@/lib/api-client";
 import { AreaName, GradeLevel } from "@/lib/types";
@@ -95,7 +95,7 @@ export default function StudentDetailPage({ params }: { params: Promise<{ id: st
       .sort((a, b) => (a.submittedAt < b.submittedAt ? 1 : -1));
   }, [submissions, id, student, serverDetail]);
 
-  if (!student || !user || !canManageStudent(user, student)) {
+  if (!student || !user || !canViewStudent(user, student)) {
     return <p role="alert">해당 학생을 조회할 권한이 없거나 학생을 찾을 수 없습니다.</p>;
   }
 

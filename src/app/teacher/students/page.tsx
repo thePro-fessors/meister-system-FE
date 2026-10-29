@@ -6,7 +6,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useData } from "@/context/DataContext";
 import { PageHeader } from "@/components/AppShell";
 import { StatusPill } from "@/components/StatusPill";
-import { canManageStudent, isSubmissionOfStudent } from "@/lib/teacherScope";
+import { canViewStudent, isSubmissionOfStudent } from "@/lib/teacherScope";
 import { computeAreaResults, computeCertStatus, matchesStudentId } from "@/lib/grading";
 import { AREA_NAMES, AreaName, SubmissionStatus } from "@/lib/types";
 import { apiClient } from "@/lib/api-client";
@@ -76,7 +76,7 @@ export default function TeacherStudentsPage() {
   }, [selectedYear, grade, classNo, studentNo, name, area, status, pointsOnly]);
 
   const scopedStudents = useMemo(
-    () => (user ? users.filter((u) => u.role === "student" && canManageStudent(user, u)) : []),
+    () => (user ? users.filter((u) => u.role === "student" && canViewStudent(user, u)) : []),
     [users, user]
   );
 
